@@ -134,6 +134,131 @@ export const catalogue = {
   "audit.col.module": { id: "Modul", en: "Module" },
   "audit.col.subject": { id: "Objek", en: "Subject" },
   "audit.col.ip": { id: "Alamat IP", en: "IP address" },
+
+  // --- RBAC module labels (the 9 permission subjects, ADR-0012). Codes stay neutral; labels here. ---
+  "enum.rbacModule.vendors": { id: "Vendor", en: "Vendors" },
+  "enum.rbacModule.documents": { id: "Dokumen", en: "Documents" },
+  "enum.rbacModule.approvals": { id: "Persetujuan", en: "Approvals" },
+  "enum.rbacModule.registration_lists": { id: "Daftar Registrasi", en: "Registration lists" },
+  "enum.rbacModule.operational_lists": { id: "Daftar Operasional", en: "Operational lists" },
+  "enum.rbacModule.approval_routes": { id: "Rute Persetujuan", en: "Approval routes" },
+  "enum.rbacModule.document_master": { id: "Master Dokumen", en: "Document master" },
+  "enum.rbacModule.access": { id: "Akses", en: "Access" },
+  "enum.rbacModule.audit": { id: "Audit", en: "Audit" },
+
+  // --- RBAC verb labels (the 5 permission columns, ADR-0011). ---
+  "enum.rbacVerb.add": { id: "Tambah", en: "Add" },
+  "enum.rbacVerb.edit": { id: "Ubah", en: "Edit" },
+  "enum.rbacVerb.delete": { id: "Hapus", en: "Delete" },
+  "enum.rbacVerb.view": { id: "Lihat", en: "View" },
+  "enum.rbacVerb.approve": { id: "Setujui", en: "Approve" },
+
+  // --- Access admin — the M1.5 console screen (#24): Users/Roles CRUD + RBAC matrix editor. ---
+  "access.title": { id: "Kontrol Akses", en: "Access Control" },
+  "access.subtitle": {
+    id: "Kelola pengguna, peran, dan matriks izin RBAC (9 modul × 5 verba).",
+    en: "Manage users, roles, and the RBAC permission matrix (9 modules × 5 verbs).",
+  },
+  "access.tab.roles": { id: "Peran", en: "Roles" },
+  "access.tab.users": { id: "Pengguna", en: "Users" },
+  "access.loading": { id: "Memuat…", en: "Loading…" },
+  "access.loadError": { id: "Gagal memuat data akses.", en: "Couldn't load access data." },
+  "access.saveError": { id: "Gagal menyimpan perubahan.", en: "Couldn't save the change." },
+  "access.retry": { id: "Coba lagi", en: "Retry" },
+  "access.cancel": { id: "Batal", en: "Cancel" },
+  "access.save": { id: "Simpan", en: "Save" },
+  "access.saving": { id: "Menyimpan…", en: "Saving…" },
+
+  // Roles tab
+  "access.roles.new": { id: "Peran baru", en: "New role" },
+  "access.roles.empty": { id: "Belum ada peran.", en: "No roles yet." },
+  "access.roles.col.role": { id: "Peran", en: "Role" },
+  "access.roles.col.code": { id: "Kode", en: "Code" },
+  "access.roles.col.lead": { id: "Ketua", en: "Lead" },
+  "access.roles.col.users": { id: "Pengguna", en: "Users" },
+  "access.roles.col.status": { id: "Status", en: "Status" },
+  "access.roles.col.actions": { id: "Tindakan", en: "Actions" },
+  "access.roles.edit": { id: "Ubah", en: "Edit" },
+  "access.roles.deactivate": { id: "Nonaktifkan", en: "Deactivate" },
+  "access.roles.reactivate": { id: "Aktifkan", en: "Reactivate" },
+  "access.roles.createTitle": { id: "Peran baru", en: "New role" },
+  "access.roles.editTitle": { id: "Ubah peran", en: "Edit role" },
+  "access.roles.field.code": { id: "Kode (netral bahasa)", en: "Code (language-neutral)" },
+  "access.roles.field.code.helper": {
+    id: "Kunci stabil, mis. document_verifier. Tidak dapat diubah setelah dibuat.",
+    en: "Stable key, e.g. document_verifier. Cannot be changed after creation.",
+  },
+  "access.roles.field.nameId": { id: "Nama (Indonesia)", en: "Name (Indonesian)" },
+  "access.roles.field.nameEn": { id: "Nama (Inggris)", en: "Name (English)" },
+  "access.roles.field.lead": {
+    id: "Ketua peran (dispatch otomatis)",
+    en: "Role lead (auto-dispatch)",
+  },
+  "access.roles.field.lead.none": { id: "Tanpa ketua", en: "No lead" },
+  "access.roles.matrix": { id: "Matriks izin", en: "Permission matrix" },
+  "access.roles.matrix.module": { id: "Modul", en: "Module" },
+
+  // Users tab
+  "access.users.new": { id: "Pengguna baru", en: "New user" },
+  "access.users.empty": { id: "Belum ada pengguna.", en: "No users yet." },
+  "access.users.col.name": { id: "Nama", en: "Name" },
+  "access.users.col.email": { id: "Email", en: "Email" },
+  "access.users.col.kind": { id: "Jenis", en: "Kind" },
+  "access.users.col.roles": { id: "Peran", en: "Roles" },
+  "access.users.col.status": { id: "Status", en: "Status" },
+  "access.users.col.actions": { id: "Tindakan", en: "Actions" },
+  "access.users.edit": { id: "Ubah", en: "Edit" },
+  "access.users.resetPassword": { id: "Atur ulang sandi", en: "Reset password" },
+  "access.users.deactivate": { id: "Nonaktifkan", en: "Deactivate" },
+  "access.users.reactivate": { id: "Aktifkan", en: "Reactivate" },
+  "access.users.createTitle": { id: "Pengguna internal baru", en: "New internal user" },
+  "access.users.editTitle": { id: "Ubah pengguna", en: "Edit user" },
+  "access.users.field.email": { id: "Email", en: "Email" },
+  "access.users.field.name": { id: "Nama lengkap", en: "Full name" },
+  "access.users.field.roles": { id: "Peran", en: "Roles" },
+  "access.users.createHint": {
+    id: "Pengguna dibuat sebagai staf internal dan menerima email untuk menetapkan kata sandinya.",
+    en: "The user is created as internal staff and receives an email to set their password.",
+  },
+  "access.users.resetSent": {
+    id: "Email atur ulang kata sandi dikirim ke {email}.",
+    en: "A password-reset email was sent to {email}.",
+  },
+  "access.users.created": { id: "Pengguna {email} dibuat.", en: "User {email} created." },
+  "access.status.active": { id: "Aktif", en: "Active" },
+  "access.status.inactive": { id: "Nonaktif", en: "Inactive" },
+  "access.kind.internal": { id: "Internal", en: "Internal" },
+  "access.kind.vendor": { id: "Vendor", en: "Vendor" },
+
+  // Deadlock guard (ADR-0011b): warn before a save that would leave zero eligible approvers.
+  "access.deadlock.warning": {
+    id: "Perubahan ini membuat tidak ada pengguna aktif yang memegang izin persetujuan wajib: {capabilities}. Tetap simpan?",
+    en: "This change leaves no active user holding a required approval permission: {capabilities}. Save anyway?",
+  },
+  "access.deadlock.confirm": { id: "Tetap simpan", en: "Save anyway" },
+  "access.deadlock.title": { id: "Peringatan kebuntuan", en: "Deadlock warning" },
+  "access.eligibility.holders": {
+    id: "{count} pengguna aktif memegang izin ini",
+    en: "{count} active users hold this permission",
+  },
+
+  // API-surfaced access errors (over the shared DomainError codes).
+  "access.error.notFound": {
+    id: "Data akses tidak ditemukan.",
+    en: "That access record was not found.",
+  },
+  "access.error.codeTaken": {
+    id: "Kode peran sudah digunakan.",
+    en: "That role code is already in use.",
+  },
+  "access.error.emailTaken": {
+    id: "Email sudah terdaftar.",
+    en: "That email is already registered.",
+  },
+  "access.error.vendorRoleGrant": {
+    id: "Peran hanya dapat diberikan kepada pengguna internal.",
+    en: "Roles can only be granted to internal users.",
+  },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */

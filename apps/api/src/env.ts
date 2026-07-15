@@ -34,6 +34,8 @@ export const env = {
     process.env.BETTER_AUTH_URL ?? `http://localhost:${Number(process.env.PORT ?? 3001)}`,
   /** Where email links land the user after verifying / resetting — the vendor portal by default. */
   portalUrl: process.env.APP_PORTAL_URL ?? "http://localhost:3000",
+  /** The staff console origin — where an admin-invited internal user lands to set their password (M1.5). */
+  consoleUrl: process.env.APP_CONSOLE_URL ?? "http://localhost:3002",
 
   // --- SMTP (M1.1) — Mailpit in dev; a real authenticated host via the staging overlay ----------
   smtpHost: process.env.SMTP_HOST ?? "localhost",
