@@ -26,6 +26,7 @@ import {
   ToastProvider,
 } from "@vms/ui";
 import { useState } from "react";
+import { AuditLog } from "./features/audit-log";
 
 /**
  * Staff Console shell (M0.5). The dark navy (#001a36) sidebar skin, mirroring the prototype's
@@ -113,6 +114,8 @@ export default function App() {
         >
           {showGallery ? (
             <Gallery />
+          ) : active === "audit" ? (
+            <AuditLog />
           ) : SOON_KEYS.has(active) ? (
             <ComingSoon title={title} />
           ) : (

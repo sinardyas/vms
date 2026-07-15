@@ -75,6 +75,28 @@ export const catalogue = {
     id: "Tidak berfungsi — hanya menggambarkan alur yang direncanakan.",
     en: "Not functional — illustrates the intended flow only.",
   },
+
+  // --- Audit-log screen — the M0.6 walking-skeleton slice (#8) ---
+  "audit.title": { id: "Log Audit", en: "Audit Log" },
+  "audit.subtitle": {
+    id: "Setiap tindakan dicatat sekali dan tidak pernah diubah — jejak yang hanya bertambah.",
+    en: "Every action is recorded once and never edited — an append-only trail.",
+  },
+  "audit.signedInAs": { id: "Masuk sebagai {name}", en: "Signed in as {name}" },
+  "audit.refresh": { id: "Muat ulang", en: "Refresh" },
+  "audit.loading": { id: "Memuat…", en: "Loading…" },
+  "audit.empty": { id: "Belum ada tindakan yang tercatat.", en: "No actions recorded yet." },
+  "audit.loadError": {
+    id: "Gagal memuat log audit.",
+    en: "Couldn't load the audit log.",
+  },
+  "audit.system": { id: "Sistem", en: "System" },
+  "audit.col.time": { id: "Waktu", en: "Time" },
+  "audit.col.actor": { id: "Pelaku", en: "Actor" },
+  "audit.col.action": { id: "Tindakan", en: "Action" },
+  "audit.col.module": { id: "Modul", en: "Module" },
+  "audit.col.subject": { id: "Objek", en: "Subject" },
+  "audit.col.ip": { id: "Alamat IP", en: "IP address" },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */

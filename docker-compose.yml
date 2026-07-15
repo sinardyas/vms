@@ -98,6 +98,11 @@ services:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 3001
       DATABASE_URL: postgres://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@postgres:5432/${POSTGRES_DB:-vms}
+      # Walking skeleton (#8): stand in a fake authenticated actor so the end-to-end spine runs
+      # before M1 auth. Dev-only — the staging overlay pins NODE_ENV=production, which disables it.
+      DEV_ACTOR: ${DEV_ACTOR:-1}
+      # Browser origins allowed to call the API (the console / portal SPAs).
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3002}
       # MinIO (S3) — file storage (ADR-0008)
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
