@@ -13,12 +13,21 @@
  */
 import { db } from "./index";
 import { seedAccess } from "./seed/access";
+import { seedRegistrationLists } from "./seed/registration-lists";
 
 async function main() {
   const access = await seedAccess(db);
   // biome-ignore lint/suspicious/noConsole: seed progress belongs in stdout for container logs.
   console.log(
     `[seed] access control: ${access.roles} roles, ${access.permissions} permission rows (idempotent).`,
+  );
+
+  const lists = await seedRegistrationLists(db);
+  // biome-ignore lint/suspicious/noConsole: seed progress belongs in stdout for container logs.
+  console.log(
+    `[seed] registration lists: ${lists.countries} countries, ${lists.currencies} currencies, ` +
+      `${lists.banks} banks, ${lists.businessEntities} business entities, ` +
+      `${lists.vendorCategories} vendor categories (idempotent).`,
   );
 }
 

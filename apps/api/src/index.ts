@@ -10,6 +10,7 @@ import { type AppEnv, requestContext } from "./context";
 import { devActorResolver } from "./dev-actor";
 import { env } from "./env";
 import { meRoutes } from "./me-route";
+import { registrationListRoutes } from "./registration-lists-route";
 import { sessionActorResolver } from "./session-actor";
 
 const app = new Hono<AppEnv>();
@@ -57,5 +58,10 @@ app.route("/console", auditRoutes());
 // M1.5 (#24): Access admin — Users/Roles CRUD + RBAC matrix editor, all gated on `access` and
 // deadlock-guarded (ADR-0011b). Mounted under the same authenticated `/console` prefix.
 app.route("/console/access", accessRoutes());
+
+// M2.2 (#33): the five registration-list masters (business entities, vendor categories, banks,
+// currencies, countries) vendor registration reads its dropdowns from — each a thin instantiation of
+// the M2.1 master framework (#32), gated on `registration_lists` and audited atomically.
+app.route("/console/registration-lists", registrationListRoutes());
 
 export default { port: env.port, fetch: app.fetch };
