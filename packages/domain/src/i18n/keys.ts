@@ -285,6 +285,16 @@ export const catalogue = {
   },
   "audit.page.prev": { id: "Sebelumnya", en: "Previous" },
   "audit.page.next": { id: "Berikutnya", en: "Next" },
+
+  // --- Master-data framework — the shared errors every M2 master-list CRUD returns (M2.1, #32). ---
+  "master.error.notFound": {
+    id: "Data master tidak ditemukan.",
+    en: "The master record was not found.",
+  },
+  "master.error.codeTaken": {
+    id: "Kode ini sudah dipakai oleh data master lain.",
+    en: "This code is already used by another master record.",
+  },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */
