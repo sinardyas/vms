@@ -4,6 +4,7 @@ import {
   ChatCircleDots,
   ClipboardText,
   Gauge,
+  Handshake,
   Invoice,
   ListChecks,
   SealCheck,
@@ -17,6 +18,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  ComingSoon,
   Gallery,
   LocaleProvider,
   LocaleSwitch,
@@ -39,6 +41,7 @@ const NAV: NavGroup[] = [
       { key: "verification", label: "Document Verification", icon: SealCheck, badge: 5 },
       { key: "approvals", label: "Approvals", icon: ListChecks, badge: 3 },
       { key: "invoices", label: "Invoice Processing", icon: Invoice, soon: true },
+      { key: "contracts", label: "POs & Contracts", icon: Handshake, soon: true },
       { key: "communications", label: "Communications", icon: ChatCircleDots, soon: true },
     ],
   },
@@ -60,6 +63,7 @@ const TITLES: Record<string, string> = {
   verification: "Document Verification",
   approvals: "Approvals",
   invoices: "Invoice Processing",
+  contracts: "POs & Contracts",
   communications: "Communications",
   "master-data": "Master Data",
   access: "Access Control",
@@ -68,6 +72,14 @@ const TITLES: Record<string, string> = {
   reports: "Reports",
 };
 
+/** Out-of-Phase-0 sections — the ones the nav flags `soon` — render the ComingSoon shell (#9). */
+const SOON_KEYS = new Set(
+  NAV.flatMap((g) => g.items)
+    .filter((i) => i.soon)
+    .map((i) => i.key),
+);
+
+/** In-scope Phase-0 screen that hasn't landed yet — distinct from the out-of-Phase-0 shell. */
 function Placeholder({ title }: { title: string }) {
   return (
     <Card>
@@ -84,6 +96,7 @@ function Placeholder({ title }: { title: string }) {
 export default function App() {
   const [active, setActive] = useState("dashboard");
   const showGallery = active === "dashboard" || active === "components";
+  const title = TITLES[active] ?? "Section";
 
   return (
     <LocaleProvider>
@@ -98,7 +111,13 @@ export default function App() {
           title={TITLES[active] ?? APP_NAME}
           headerRight={<LocaleSwitch />}
         >
-          {showGallery ? <Gallery /> : <Placeholder title={TITLES[active] ?? "Section"} />}
+          {showGallery ? (
+            <Gallery />
+          ) : SOON_KEYS.has(active) ? (
+            <ComingSoon title={title} />
+          ) : (
+            <Placeholder title={title} />
+          )}
         </AppShell>
       </ToastProvider>
     </LocaleProvider>

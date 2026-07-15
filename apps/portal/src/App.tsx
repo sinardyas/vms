@@ -14,6 +14,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  ComingSoon,
   Gallery,
   LocaleProvider,
   LocaleSwitch,
@@ -57,6 +58,14 @@ const TITLES: Record<string, string> = {
   messages: "Communications",
 };
 
+/** Out-of-Phase-0 sections — the ones the nav flags `soon` — render the ComingSoon shell (#9). */
+const SOON_KEYS = new Set(
+  NAV.flatMap((g) => g.items)
+    .filter((i) => i.soon)
+    .map((i) => i.key),
+);
+
+/** In-scope Phase-0 screen that hasn't landed yet — distinct from the out-of-Phase-0 shell. */
 function Placeholder({ title }: { title: string }) {
   return (
     <Card>
@@ -73,6 +82,7 @@ function Placeholder({ title }: { title: string }) {
 export default function App() {
   const [active, setActive] = useState("dashboard");
   const showGallery = active === "dashboard" || active === "components";
+  const title = TITLES[active] ?? "Section";
 
   return (
     <LocaleProvider>
@@ -87,7 +97,13 @@ export default function App() {
           title={TITLES[active] ?? APP_NAME}
           headerRight={<LocaleSwitch />}
         >
-          {showGallery ? <Gallery /> : <Placeholder title={TITLES[active] ?? "Section"} />}
+          {showGallery ? (
+            <Gallery />
+          ) : SOON_KEYS.has(active) ? (
+            <ComingSoon title={title} />
+          ) : (
+            <Placeholder title={title} />
+          )}
         </AppShell>
       </ToastProvider>
     </LocaleProvider>
