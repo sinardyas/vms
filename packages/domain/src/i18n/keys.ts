@@ -350,6 +350,57 @@ export const catalogue = {
     id: "Tampilkan di pemilih mata uang bank",
     en: "Show in bank currency selector",
   },
+
+  // --- Document Master origin applicability (ADR-0013). ---
+  "enum.appliesTo.local": { id: "Dalam Negeri", en: "Local" },
+  "enum.appliesTo.foreign": { id: "Luar Negeri", en: "Foreign" },
+  "enum.appliesTo.both": { id: "Keduanya", en: "Both" },
+
+  // --- Document Master console (M2.3, #34) — compliance doc types + the category matrix. ---
+  "docMaster.title": { id: "Master Dokumen", en: "Document Master" },
+  "docMaster.subtitle": {
+    id: "Jenis dokumen kepatuhan yang diminta dari vendor dan matriks persyaratan per kategori yang dievaluasi oleh gerbang aktivasi. Menonaktifkan dokumen berarti dokumen itu tidak lagi diminta dari vendor.",
+    en: "The compliance document types requested from vendors and the per-category requirements matrix the activation gate evaluates. Disabling a document stops it being requested from vendors.",
+  },
+  "docMaster.doc": { id: "Dokumen", en: "Document" },
+  "docMaster.tab.documents": { id: "Master Dokumen", en: "Document Master" },
+  "docMaster.tab.requirements": { id: "Persyaratan Kategori", en: "Category Requirements" },
+
+  // Document field / column labels.
+  "docMaster.f.no": { id: "No.", en: "No." },
+  "docMaster.f.name": { id: "Nama Dokumen", en: "Document Name" },
+  "docMaster.f.type": { id: "Jenis", en: "Type" },
+  "docMaster.f.appliesTo": { id: "Berlaku Untuk", en: "Applies To" },
+  "docMaster.f.validityDays": { id: "Masa Berlaku (hari)", en: "Validity (days)" },
+  "docMaster.f.mandatory": { id: "Wajib", en: "Mandatory" },
+  "docMaster.f.reminder": { id: "Pengingat", en: "Reminder" },
+  "docMaster.badge.mandatory": { id: "Wajib", en: "Mandatory" },
+  "docMaster.badge.optional": { id: "Opsional", en: "Optional" },
+
+  // Category-requirements matrix.
+  "docMaster.matrix.title": {
+    id: "Matriks Persyaratan Kategori",
+    en: "Category Requirements Matrix",
+  },
+  "docMaster.matrix.subtitle": {
+    id: "Petakan jenis dokumen mana yang diwajibkan setiap kategori vendor. Kumpulan wajib vendor = dokumen asal ∪ dokumen kategori tunggalnya. Klik sel untuk berpindah antara Tidak diperlukan → Wajib → Opsional.",
+    en: "Map which document types each vendor category requires. A vendor's required set = origin documents ∪ its single category's documents. Click a cell to cycle Not required → Mandatory → Optional.",
+  },
+  "docMaster.matrix.docColumn": { id: "Dokumen", en: "Document" },
+  "docMaster.matrix.noCategories": {
+    id: "Belum ada kategori vendor aktif. Tambahkan kategori di Data Master dahulu.",
+    en: "No active vendor categories yet. Add categories in Master Data first.",
+  },
+  "docMaster.matrix.noDocuments": {
+    id: "Belum ada dokumen. Tambahkan dokumen di tab Master Dokumen dahulu.",
+    en: "No documents yet. Add documents in the Document Master tab first.",
+  },
+  "docMaster.matrix.cell.none": { id: "—", en: "—" },
+  "docMaster.matrix.cell.mandatory": { id: "W", en: "M" },
+  "docMaster.matrix.cell.optional": { id: "O", en: "O" },
+  "docMaster.matrix.legend.mandatory": { id: "W = Wajib", en: "M = Mandatory" },
+  "docMaster.matrix.legend.optional": { id: "O = Opsional", en: "O = Optional" },
+  "docMaster.matrix.legend.none": { id: "— = Tidak diperlukan", en: "— = Not required" },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */

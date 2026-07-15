@@ -13,6 +13,7 @@
  */
 import { db } from "./index";
 import { seedAccess } from "./seed/access";
+import { seedDocumentMaster } from "./seed/document-master";
 import { seedRegistrationLists } from "./seed/registration-lists";
 
 async function main() {
@@ -28,6 +29,14 @@ async function main() {
     `[seed] registration lists: ${lists.countries} countries, ${lists.currencies} currencies, ` +
       `${lists.banks} banks, ${lists.businessEntities} business entities, ` +
       `${lists.vendorCategories} vendor categories (idempotent).`,
+  );
+
+  // Document master must follow registration lists — its category requirements reference vendor_categories.
+  const docs = await seedDocumentMaster(db);
+  // biome-ignore lint/suspicious/noConsole: seed progress belongs in stdout for container logs.
+  console.log(
+    `[seed] document master: ${docs.documents} documents, ${docs.requirements} category requirements ` +
+      `(${docs.skippedRequirements} skipped) (idempotent).`,
   );
 }
 
