@@ -77,6 +77,15 @@ export {
   type AppUser,
 } from "./shell/app-shell";
 
+// Access — RBAC capability mirror (M1.3): server-authored flags gate what a screen offers.
+export {
+  CapabilitiesProvider,
+  useCapabilities,
+  useCan,
+  type CapabilitiesLoader,
+  type CapabilitiesStatus,
+} from "./access/capabilities";
+
 // i18n
 export { LocaleProvider, useLocale, useT, SUPPORTED_LOCALES } from "./i18n/provider";
 export { LocaleSwitch } from "./i18n/locale-switch";

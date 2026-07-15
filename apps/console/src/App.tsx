@@ -11,9 +11,10 @@ import {
   ShieldCheck,
   SquaresFour,
 } from "@phosphor-icons/react";
-import { APP_NAME } from "@vms/domain";
+import { APP_NAME, type RbacModule } from "@vms/domain";
 import {
   AppShell,
+  CapabilitiesProvider,
   Card,
   CardContent,
   CardHeader,
@@ -24,9 +25,11 @@ import {
   LocaleSwitch,
   type NavGroup,
   ToastProvider,
+  useCapabilities,
 } from "@vms/ui";
 import { useState } from "react";
 import { AuditLog } from "./features/audit-log";
+import { loadCapabilities } from "./lib/api";
 
 /**
  * Staff Console shell (M0.5). The dark navy (#001a36) sidebar skin, mirroring the prototype's
@@ -80,6 +83,22 @@ const SOON_KEYS = new Set(
     .map((i) => i.key),
 );
 
+/**
+ * Capability gate per nav key (M1.3, #22): a real Phase-0 section shows only when the actor holds
+ * `<module>:view` — the same grant its backing route enforces server-side, so a hidden nav item is a
+ * request that would 403. Keys absent here are always shown: the Dashboard/Design-System landing and
+ * the out-of-Phase-0 `soon` shells (visibly stubs, no backend to refuse). M2 refines Master Data's
+ * gate as its sub-screens land (each on its own module); `registration_lists` is the proxy for now.
+ */
+const NAV_GATE: Partial<Record<string, RbacModule>> = {
+  vendors: "vendors",
+  verification: "documents",
+  approvals: "approvals",
+  "master-data": "registration_lists",
+  access: "access",
+  audit: "audit",
+};
+
 /** In-scope Phase-0 screen that hasn't landed yet — distinct from the out-of-Phase-0 shell. */
 function Placeholder({ title }: { title: string }) {
   return (
@@ -94,34 +113,61 @@ function Placeholder({ title }: { title: string }) {
   );
 }
 
-export default function App() {
+/**
+ * The console proper — reads the live capability grid (M1.3) and shows only the nav the signed-in
+ * actor may reach. Runs inside {@link CapabilitiesProvider}, so `useCapabilities().can` reflects the
+ * server's `/me` grid; until it loads (or with no session) gated items stay hidden — deny-by-default.
+ */
+function Console() {
   const [active, setActive] = useState("dashboard");
-  const showGallery = active === "dashboard" || active === "components";
-  const title = TITLES[active] ?? "Section";
+  const { can } = useCapabilities();
 
+  // Hide any real section the actor can't `view`; keep ungated items (landing + `soon` shells).
+  const groups: NavGroup[] = NAV.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => {
+      const module = NAV_GATE[item.key];
+      return module === undefined || can(module, "view");
+    }),
+  })).filter((group) => group.items.length > 0);
+
+  // If the active section got gated away, fall back to the always-present Dashboard.
+  const visibleKeys = new Set(groups.flatMap((g) => g.items).map((i) => i.key));
+  const current = visibleKeys.has(active) ? active : "dashboard";
+  const showGallery = current === "dashboard" || current === "components";
+  const title = TITLES[current] ?? "Section";
+
+  return (
+    <AppShell
+      variant="dark"
+      brand={{ title: APP_NAME, subtitle: "Staff Console" }}
+      groups={groups}
+      activeKey={current}
+      onNavigate={setActive}
+      user={{ name: "Sari Wijaya", role: "Vendor Administrator" }}
+      title={TITLES[current] ?? APP_NAME}
+      headerRight={<LocaleSwitch />}
+    >
+      {showGallery ? (
+        <Gallery />
+      ) : current === "audit" ? (
+        <AuditLog />
+      ) : SOON_KEYS.has(current) ? (
+        <ComingSoon title={title} />
+      ) : (
+        <Placeholder title={title} />
+      )}
+    </AppShell>
+  );
+}
+
+export default function App() {
   return (
     <LocaleProvider>
       <ToastProvider>
-        <AppShell
-          variant="dark"
-          brand={{ title: APP_NAME, subtitle: "Staff Console" }}
-          groups={NAV}
-          activeKey={active}
-          onNavigate={setActive}
-          user={{ name: "Sari Wijaya", role: "Vendor Administrator" }}
-          title={TITLES[active] ?? APP_NAME}
-          headerRight={<LocaleSwitch />}
-        >
-          {showGallery ? (
-            <Gallery />
-          ) : active === "audit" ? (
-            <AuditLog />
-          ) : SOON_KEYS.has(active) ? (
-            <ComingSoon title={title} />
-          ) : (
-            <Placeholder title={title} />
-          )}
-        </AppShell>
+        <CapabilitiesProvider load={loadCapabilities}>
+          <Console />
+        </CapabilitiesProvider>
       </ToastProvider>
     </LocaleProvider>
   );
