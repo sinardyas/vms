@@ -1,0 +1,18 @@
+# Keep build contexts small & deterministic. The Bun lockfile IS copied (needed for
+# --frozen-lockfile); everything below is either rebuilt in-image or irrelevant.
+**/node_modules
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+**/.DS_Store
+
+# Large prototype HTML fixtures — not needed to build any image.
+staff_console.html
+vendor_portal.html
+vendor-management-system-feature-brainstorm.md
