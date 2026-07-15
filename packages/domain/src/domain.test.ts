@@ -4,7 +4,18 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type Actor, can, capabilities, permissionKey, toPermissionSet } from "./access";
+import {
+  type Actor,
+  type ApproverCandidate,
+  approverIneligibility,
+  can,
+  capabilities,
+  eligibleApprovers,
+  hasEligibleApprover,
+  isEligibleApprover,
+  permissionKey,
+  toPermissionSet,
+} from "./access";
 import { forbiddenError, isDomainError, validationError } from "./errors";
 import { translate, translator } from "./i18n";
 import { err, isErr, isOk, map, ok, unwrapOr } from "./result";
@@ -102,5 +113,68 @@ describe("RBAC seam", () => {
     expect(flags.vendors.edit).toBe(true);
     expect(flags.vendors.delete).toBe(false);
     expect(flags.audit.view).toBe(false);
+  });
+});
+
+describe("Approver eligibility (M1.6, SoD)", () => {
+  const approver = (userId: string): ApproverCandidate => ({
+    userId,
+    permissions: toPermissionSet([{ module: "approvals", verb: "approve" }]),
+  });
+  const staff = (userId: string): ApproverCandidate => ({
+    userId,
+    permissions: toPermissionSet([{ module: "approvals", verb: "view" }]), // no approve grant
+  });
+
+  test("role ∩ approve-perm: candidate must hold the approve grant", () => {
+    expect(isEligibleApprover(approver("a1"), {})).toBe(true);
+    expect(isEligibleApprover(staff("s1"), {})).toBe(false);
+    expect(approverIneligibility(staff("s1"), {})).toBe("missing-permission");
+  });
+
+  test("no self-approval: the submitter is barred even with the grant", () => {
+    expect(approverIneligibility(approver("a1"), { submitterUserId: "a1" })).toBe("self-approval");
+    expect(isEligibleApprover(approver("a2"), { submitterUserId: "a1" })).toBe(true);
+    // null / undefined submitter applies no self-approval exclusion
+    expect(isEligibleApprover(approver("a1"), { submitterUserId: null })).toBe(true);
+  });
+
+  test("verifier ≠ approver: any document verifier on the vendor is barred", () => {
+    const sod = { verifierUserIds: ["v1", "v2"] };
+    expect(approverIneligibility(approver("v1"), sod)).toBe("verifier");
+    expect(isEligibleApprover(approver("a3"), sod)).toBe(true);
+  });
+
+  test("precedence: permission checked before SoD (ADR-0009 order)", () => {
+    // a submitter who also lacks the grant reports the missing permission first
+    expect(approverIneligibility(staff("s1"), { submitterUserId: "s1" })).toBe(
+      "missing-permission",
+    );
+    // a submitter who is also a verifier reports self-approval (submitter before verifier)
+    expect(
+      approverIneligibility(approver("a1"), { submitterUserId: "a1", verifierUserIds: ["a1"] }),
+    ).toBe("self-approval");
+  });
+
+  test("required permission is overridable (document-verifier eligibility)", () => {
+    const docApprover: ApproverCandidate = {
+      userId: "d1",
+      permissions: toPermissionSet([{ module: "documents", verb: "approve" }]),
+    };
+    expect(isEligibleApprover(docApprover, {})).toBe(false); // lacks approvals:approve
+    expect(isEligibleApprover(docApprover, {}, { module: "documents", verb: "approve" })).toBe(
+      true,
+    );
+  });
+
+  test("eligibleApprovers / hasEligibleApprover subtract the full SoD set", () => {
+    const pool = [approver("submitter"), approver("verifier"), approver("clean"), staff("nograt")];
+    const sod = { submitterUserId: "submitter", verifierUserIds: ["verifier"] };
+    expect(eligibleApprovers(pool, sod).map((c) => c.userId)).toEqual(["clean"]);
+    expect(hasEligibleApprover(pool, sod)).toBe(true);
+    // when SoD strands the last holder, the pool is empty → engine must escalate (M4.3)
+    const only = [approver("submitter")];
+    expect(eligibleApprovers(only, { submitterUserId: "submitter" })).toHaveLength(0);
+    expect(hasEligibleApprover(only, { submitterUserId: "submitter" })).toBe(false);
   });
 });
