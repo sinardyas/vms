@@ -4,19 +4,28 @@ import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { auditRoutes } from "./audit-route";
+import { auth } from "./auth";
 import { type AppEnv, requestContext } from "./context";
 import { devActorResolver } from "./dev-actor";
 import { env } from "./env";
+import { sessionActorResolver } from "./session-actor";
 
 const app = new Hono<AppEnv>();
 
-// The SPAs (console :3002, portal :3000) call this API from another origin — allow them explicitly.
-app.use("*", cors({ origin: env.corsOrigins }));
+// The SPAs (console :3002, portal :3000) call this API — including the auth endpoints — from another
+// origin. Credentials must be allowed so the better-auth session cookie is sent and set cross-origin.
+app.use("*", cors({ origin: env.corsOrigins, credentials: true }));
 
-// Every request carries a RequestContext (actor, locale, ip/ua) — the M0.4 cross-cutting seam that
-// the audit writer and RBAC guard read. Auth arrives in M1; until then the actor is the dev
-// stand-in when `DEV_ACTOR` is on (walking skeleton, #8), otherwise "nobody" (guarded routes → 401).
-app.use("*", requestContext(env.devActor ? devActorResolver : undefined));
+// better-auth owns everything under its base path (sign-up, verify, sign-in, session, reset). Mounted
+// BEFORE the context middleware and terminal (returns a Response), so the per-request session lookup
+// below never runs against better-auth's own routes.
+app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+
+// Every other request carries a RequestContext (actor, locale, ip/ua) — the M0.4 cross-cutting seam
+// the audit writer and RBAC guard read. The actor is now resolved from the real better-auth session
+// (M1.1); the dev stand-in (#8) remains available only when `DEV_ACTOR` is explicitly on in a
+// non-production env, so the walking skeleton still runs without a login.
+app.use("*", requestContext(env.devActor ? devActorResolver : sessionActorResolver(db)));
 
 app.get("/", (c) => c.text(`${APP_NAME} API — see /health`));
 

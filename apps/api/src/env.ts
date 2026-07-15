@@ -21,4 +21,32 @@ export const env = {
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean),
+
+  // --- Auth (M1.1, #20) ------------------------------------------------------
+  /**
+   * better-auth signing secret. Required in production (the boot check below throws without it);
+   * a fixed dev fallback keeps `bun run dev` and tests turnkey without leaking a real secret.
+   */
+  betterAuthSecret:
+    process.env.BETTER_AUTH_SECRET ?? "dev-only-insecure-secret-change-in-production",
+  /** The API's own public base URL — better-auth builds verification/reset links against it. */
+  betterAuthUrl:
+    process.env.BETTER_AUTH_URL ?? `http://localhost:${Number(process.env.PORT ?? 3001)}`,
+  /** Where email links land the user after verifying / resetting — the vendor portal by default. */
+  portalUrl: process.env.APP_PORTAL_URL ?? "http://localhost:3000",
+
+  // --- SMTP (M1.1) — Mailpit in dev; a real authenticated host via the staging overlay ----------
+  smtpHost: process.env.SMTP_HOST ?? "localhost",
+  smtpPort: Number(process.env.SMTP_PORT ?? 1025),
+  smtpFrom: process.env.SMTP_FROM ?? "no-reply@vms.local",
+  /** Implicit TLS (port 465). Off for Mailpit / STARTTLS relays (587), which negotiate upward. */
+  smtpSecure: process.env.SMTP_SECURE === "true",
+  /** SMTP credentials — absent for Mailpit (accepts anything); required by real relays in staging. */
+  smtpUser: process.env.SMTP_USER,
+  smtpPass: process.env.SMTP_PASS,
 };
+
+// Fail fast in production if the auth secret was left at its insecure dev default (ADR-0015).
+if (env.nodeEnv === "production" && !process.env.BETTER_AUTH_SECRET) {
+  throw new Error("BETTER_AUTH_SECRET must be set in production");
+}
