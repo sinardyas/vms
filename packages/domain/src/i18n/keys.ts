@@ -52,6 +52,11 @@ export const catalogue = {
   "enum.origin.local": { id: "Dalam Negeri", en: "Local" },
   "enum.origin.foreign": { id: "Luar Negeri", en: "Foreign" },
 
+  // Locality (bank / business-entity legal-form locality — ADR-0006). Same codes as origin, but a
+  // distinct label namespace so the master-data screens read on their own terms.
+  "enum.locality.local": { id: "Dalam Negeri", en: "Local" },
+  "enum.locality.foreign": { id: "Luar Negeri", en: "Foreign" },
+
   "enum.vendorStatus.draft": { id: "Draf", en: "Draft" },
   "enum.vendorStatus.pending": { id: "Menunggu Persetujuan", en: "Pending" },
   "enum.vendorStatus.pending_hod": { id: "Menunggu Persetujuan HOD", en: "Pending HOD" },
@@ -294,6 +299,56 @@ export const catalogue = {
   "master.error.codeTaken": {
     id: "Kode ini sudah dipakai oleh data master lain.",
     en: "This code is already used by another master record.",
+  },
+
+  // --- Registration lists console (M2.2, #33) — the 5 dropdown masters vendor registration reads. ---
+  "regLists.title": { id: "Data Master", en: "Master Data" },
+  "regLists.subtitle": {
+    id: "Daftar registrasi yang dibaca formulir pendaftaran vendor. Menonaktifkan sebuah baris menyembunyikannya dari pendaftaran baru tanpa memutus referensi yang sudah ada.",
+    en: "The registration lists the vendor form reads. Deactivating a row hides it from new registrations without breaking existing references.",
+  },
+  "regLists.loading": { id: "Memuat…", en: "Loading…" },
+  "regLists.loadError": { id: "Gagal memuat daftar.", en: "Failed to load the list." },
+  "regLists.empty": { id: "Belum ada data.", en: "No records yet." },
+  "regLists.new": { id: "Tambah", en: "Add" },
+  "regLists.edit": { id: "Ubah", en: "Edit" },
+  "regLists.deactivate": { id: "Nonaktifkan", en: "Deactivate" },
+  "regLists.reactivate": { id: "Aktifkan", en: "Reactivate" },
+  "regLists.save": { id: "Simpan", en: "Save" },
+  "regLists.saving": { id: "Menyimpan…", en: "Saving…" },
+  "regLists.saved": { id: "Tersimpan", en: "Saved" },
+  "regLists.saveError": {
+    id: "Gagal menyimpan. Coba lagi.",
+    en: "Could not save. Please try again.",
+  },
+  "regLists.cancel": { id: "Batal", en: "Cancel" },
+  "regLists.status.active": { id: "Aktif", en: "Active" },
+  "regLists.status.inactive": { id: "Tidak Aktif", en: "Inactive" },
+  "regLists.col.status": { id: "Status", en: "Status" },
+  "regLists.col.actions": { id: "Aksi", en: "Actions" },
+  "regLists.createTitle": { id: "Tambah {list}", en: "Add {list}" },
+  "regLists.editTitle": { id: "Ubah {list}", en: "Edit {list}" },
+
+  // The five lists (tab + singular name interpolated into the dialog titles).
+  "regLists.tab.businessEntities": { id: "Badan Usaha", en: "Business Entity" },
+  "regLists.tab.vendorCategories": { id: "Kategori Vendor", en: "Vendor Category" },
+  "regLists.tab.banks": { id: "Bank", en: "Bank" },
+  "regLists.tab.currencies": { id: "Mata Uang", en: "Currency" },
+  "regLists.tab.countries": { id: "Negara", en: "Country" },
+
+  // Field / column labels shared across the lists.
+  "regLists.f.nameId": { id: "Nama (ID)", en: "Name (ID)" },
+  "regLists.f.nameEn": { id: "Nama (EN)", en: "Name (EN)" },
+  "regLists.f.name": { id: "Nama", en: "Name" },
+  "regLists.f.code": { id: "Kode", en: "Code" },
+  "regLists.f.category": { id: "Kategori", en: "Category" },
+  "regLists.f.location": { id: "Lokasi", en: "Location" },
+  "regLists.f.country": { id: "Negara", en: "Country" },
+  "regLists.f.countryNone": { id: "— Tidak ada —", en: "— None —" },
+  "regLists.f.iso3": { id: "Kode ISO-3", en: "ISO-3 code" },
+  "regLists.f.showInBankSelector": {
+    id: "Tampilkan di pemilih mata uang bank",
+    en: "Show in bank currency selector",
   },
 } as const satisfies Record<string, MessageEntry>;
 
