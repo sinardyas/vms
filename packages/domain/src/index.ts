@@ -1,14 +1,28 @@
 /**
- * @vms/domain — framework-agnostic domain core.
+ * @vms/domain — the framework-agnostic domain core (M0.3, ADR-0008).
  *
- * Placeholder for the scaffold (ticket #2). The real contents — result/error conventions,
- * shared value types, Zod schemas, and the bilingual i18n catalogue — land in ticket #6.
- * Keep this package free of Hono/React imports (it is imported by both API and UIs).
+ * The shared substrate both the Hono API and the React apps import: result/error conventions,
+ * the stable value types (mirroring `@vms/db`'s enums), Zod as the single source of validation,
+ * and the bilingual (ID + EN) i18n catalogue with locale resolution. Every user-facing string is
+ * an i18n key — the Definition-of-Done rule enforced from here on.
+ *
+ * No feature logic yet: this is what M1's RBAC `can()`, M4's approval engine, and every M3
+ * validator build on. Keep this package **stack-neutral** — no Hono, React, or Drizzle imports.
  */
 
+// Result / error conventions
+export * from "./result";
+export * from "./errors";
+
+// Shared value types (enums + locale)
+export * from "./values";
+
+// Zod validation (bridge + shared primitives)
+export * from "./schemas";
+
+// i18n catalogue + locale resolution
+export * from "./i18n";
+
+// App-wide constants (consumed by the API and both UI shells).
 export const APP_NAME = "Soechi VMS";
 export const PHASE = "phase-0" as const;
-
-export type Locale = "id" | "en";
-export const LOCALES: readonly Locale[] = ["id", "en"];
-export const DEFAULT_LOCALE: Locale = "id";
