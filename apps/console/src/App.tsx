@@ -3,6 +3,7 @@ import {
   ChartBar,
   ChatCircleDots,
   ClipboardText,
+  FileText,
   Gauge,
   Handshake,
   Invoice,
@@ -30,6 +31,7 @@ import {
 import { useState } from "react";
 import { AccessAdmin } from "./features/access-admin";
 import { AuditLog } from "./features/audit-log";
+import { DocumentMaster } from "./features/document-master";
 import { RegistrationLists } from "./features/registration-lists";
 import { loadCapabilities } from "./lib/api";
 
@@ -55,6 +57,7 @@ const NAV: NavGroup[] = [
     label: "Administration",
     items: [
       { key: "master-data", label: "Master Data", icon: ClipboardText },
+      { key: "document-master", label: "Document Master", icon: FileText },
       { key: "access", label: "Access Control", icon: ShieldCheck },
       { key: "audit", label: "Audit Log", icon: ChartBar },
       { key: "components", label: "Design System", icon: SquaresFour },
@@ -72,6 +75,7 @@ const TITLES: Record<string, string> = {
   contracts: "POs & Contracts",
   communications: "Communications",
   "master-data": "Master Data",
+  "document-master": "Document Master",
   access: "Access Control",
   audit: "Audit Log",
   components: "Design System",
@@ -97,6 +101,7 @@ const NAV_GATE: Partial<Record<string, RbacModule>> = {
   verification: "documents",
   approvals: "approvals",
   "master-data": "registration_lists",
+  "document-master": "document_master",
   access: "access",
   audit: "audit",
 };
@@ -158,6 +163,8 @@ function Console() {
         <AccessAdmin />
       ) : current === "master-data" ? (
         <RegistrationLists />
+      ) : current === "document-master" ? (
+        <DocumentMaster />
       ) : SOON_KEYS.has(current) ? (
         <ComingSoon title={title} />
       ) : (
