@@ -62,6 +62,19 @@ export const catalogue = {
   "enum.verifyStatus.pending": { id: "Menunggu Verifikasi", en: "Pending" },
   "enum.verifyStatus.verified": { id: "Terverifikasi", en: "Verified" },
   "enum.verifyStatus.rejected": { id: "Ditolak", en: "Rejected" },
+
+  // --- "Coming in a later phase" shells for out-of-Phase-0 sections (#9) ---
+  "soon.badge": { id: "Fase Mendatang", en: "Later Phase" },
+  "soon.title": { id: "Hadir pada fase berikutnya", en: "Coming in a later phase" },
+  "soon.description": {
+    id: "Bagian ini bukan bagian dari build Fase-0 yang sedang diuji. Fitur ini hadir pada rilis berikutnya — menu menampilkan keseluruhan peta produk, namun hanya layar Fase-0 yang aktif untuk UAT ini.",
+    en: "This section isn't part of the Phase-0 build under test. It arrives in a later release — the menu shows the whole product map, but only Phase-0 screens are live for this UAT.",
+  },
+  "soon.previewLabel": { id: "Pratinjau statis", en: "Static preview" },
+  "soon.previewHint": {
+    id: "Tidak berfungsi — hanya menggambarkan alur yang direncanakan.",
+    en: "Not functional — illustrates the intended flow only.",
+  },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */

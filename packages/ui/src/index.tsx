@@ -66,6 +66,7 @@ export {
   SelectItem,
 } from "./components/select";
 export { ToastProvider, useToast } from "./components/toast";
+export { ComingSoon, type ComingSoonProps } from "./components/coming-soon";
 
 // App shell
 export {
