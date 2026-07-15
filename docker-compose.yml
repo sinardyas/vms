@@ -1,0 +1,139 @@
+# Soechi VMS — dev stack. The deploy substrate for BOTH local dev and (via the staging
+# overlay) UAT/production: everything runs in Docker (ADR-0003 / UAT deploy decision).
+#
+#   docker compose up -d --build        # whole stack: infra + migrate + seed + apps
+#   docker compose up -d postgres minio mailpit   # infra only (run apps with `bun run dev`)
+#
+# Values come from `.env` (copy `.env.example`). Reasonable insecure dev defaults are
+# inlined so a bare `docker compose up` works with no `.env`.
+name: vms
+
+services:
+  # --- Infrastructure ------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vms}
+      POSTGRES_DB: ${POSTGRES_DB:-vms}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vms} -d ${POSTGRES_DB:-vms}"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"       # S3 API
+      - "${MINIO_CONSOLE_PORT:-9001}:9001" # web console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  # One-shot: create the vendor-documents bucket, then exit.
+  createbuckets:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 "${MINIO_ROOT_USER:-minioadmin}" "${MINIO_ROOT_PASSWORD:-minioadmin}" &&
+        mc mb --ignore-existing "local/${MINIO_BUCKET:-vms-documents}" &&
+        echo "bucket ${MINIO_BUCKET:-vms-documents} ready"
+    restart: "no"
+
+  # SMTP sink + web viewer. UAT testers read the pre-seeded account emails at :8025.
+  mailpit:
+    image: axllent/mailpit:latest
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025" # SMTP
+      - "${MAILPIT_WEB_PORT:-8025}:8025"  # web viewer
+
+  # --- Schema: migrate + seed (one-shot, must finish before the API boots) --------
+  migrate:
+    build:
+      context: .
+      dockerfile: packages/db/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@postgres:5432/${POSTGRES_DB:-vms}
+    restart: "no"
+
+  # --- Applications --------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3001
+      DATABASE_URL: postgres://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@postgres:5432/${POSTGRES_DB:-vms}
+      # MinIO (S3) — file storage (ADR-0008)
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-vms-documents}
+      # SMTP — Mailpit in dev; real host via the staging overlay
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@vms.local}
+    ports:
+      - "${API_PORT:-3001}:3001"
+
+  portal:
+    build:
+      context: .
+      dockerfile: apps/portal/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${PORTAL_PORT:-3000}:8080"
+
+  console:
+    build:
+      context: .
+      dockerfile: apps/console/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${CONSOLE_PORT:-3002}:8080"
+
+volumes:
+  pgdata:
+  miniodata:

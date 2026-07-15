@@ -1,0 +1,83 @@
+# Soechi VMS — staging/production overlay. Same images as the dev stack, parameterised
+# by env: real secrets (required, no insecure defaults), real SMTP, restart policies,
+# and registry-taggable image names. Apply on TOP of the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
+#
+# `${VAR:?message}` means the var is REQUIRED — compose aborts if it is unset, so a
+# staging bring-up can never silently fall back to a dev password. Set them in `.env`
+# (or the deploy environment). Out of scope here (post-M6 fog): TLS termination,
+# off-host backups, secret-manager wiring — this overlay makes the same stack promotable.
+name: vms
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+    # Not published to the host in staging — reachable only on the compose network.
+    ports: !reset []
+
+  minio:
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+
+  # Dev-only SMTP sink. In staging the API points at a real SMTP host (below); Mailpit
+  # is parked under a profile so it does not start unless explicitly requested.
+  mailpit:
+    profiles: ["dev-only"]
+
+  migrate:
+    image: ${IMAGE_PREFIX:-vms}/migrate:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: packages/db/Dockerfile
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}
+
+  api:
+    image: ${IMAGE_PREFIX:-vms}/api:${IMAGE_TAG:-latest}
+    restart: always
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      mailpit:
+        condition: service_started
+        required: false
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?set MINIO_ENDPOINT}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+      MINIO_BUCKET: ${MINIO_BUCKET:-vms-documents}
+      # Real SMTP (Resend/SES/etc.) — no Mailpit fallback in staging.
+      SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:?set SMTP_PORT}
+      SMTP_USER: ${SMTP_USER:?set SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS:?set SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM:?set SMTP_FROM}
+
+  portal:
+    image: ${IMAGE_PREFIX:-vms}/portal:${IMAGE_TAG:-latest}
+    restart: always
+    build:
+      context: .
+      dockerfile: apps/portal/Dockerfile
+      args:
+        VITE_API_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL}
+
+  console:
+    image: ${IMAGE_PREFIX:-vms}/console:${IMAGE_TAG:-latest}
+    restart: always
+    build:
+      context: .
+      dockerfile: apps/console/Dockerfile
+      args:
+        VITE_API_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL}
