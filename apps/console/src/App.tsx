@@ -30,6 +30,7 @@ import {
 import { useState } from "react";
 import { AccessAdmin } from "./features/access-admin";
 import { AuditLog } from "./features/audit-log";
+import { RegistrationLists } from "./features/registration-lists";
 import { loadCapabilities } from "./lib/api";
 
 /**
@@ -155,6 +156,8 @@ function Console() {
         <AuditLog />
       ) : current === "access" ? (
         <AccessAdmin />
+      ) : current === "master-data" ? (
+        <RegistrationLists />
       ) : SOON_KEYS.has(current) ? (
         <ComingSoon title={title} />
       ) : (
