@@ -8,6 +8,9 @@ import { departments } from "./master-data";
 
 export const roles = pgTable("roles", {
   id: uuid().primaryKey().defaultRandom(),
+  // Language-neutral stable key (ADR-0011: business codes stay language-neutral). The seed and the
+  // approval-route seeds reference a role by `code`, never by its localized display name.
+  code: varchar({ length: 64 }).notNull().unique(),
   nameId: varchar({ length: 160 }).notNull(),
   nameEn: varchar({ length: 160 }).notNull(),
   departmentId: uuid().references(() => departments.id),

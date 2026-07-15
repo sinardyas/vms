@@ -1,20 +1,25 @@
 /**
- * Seed entrypoint. Placeholder plumbing — the Docker substrate wires `migrate + seed`
- * to run inside the stack (ticket #3), but the actual seed *content* lands with later
- * tickets: master-data seeds (M2), RBAC roles/permissions (M1.2), and the rich UAT
- * scenario loader (~8 vendors across all states, pre-seeded accounts). Until then this
- * verifies DB connectivity and exits cleanly so the stack comes up green.
+ * Seed entrypoint (run inside the Docker `migrate` service after migrations — ticket #3).
+ *
+ * Seeds the **access-control grant data** (M1.2, #21): the domain-model role set + its
+ * `role_permissions` grid, so a resolved session actor stops falling through to the empty
+ * (deny-all) set (see #20). Idempotent — safe to re-run on every `docker compose up`.
+ *
+ * Still to come (fog → later tickets): the UAT accounts + `user_roles` + `roles.lead_user_id`
+ * wiring, master-data lists (M2), and the rich vendor scenario loader (M2/M3). Those build on
+ * `seedAccess()` rather than replacing it.
  *
  * Run: `bun run src/seed.ts` (script: `bun run seed`).
  */
-import { sql } from "drizzle-orm";
 import { db } from "./index";
+import { seedAccess } from "./seed/access";
 
 async function main() {
-  // Prove the connection is live; later tickets replace this body with real inserts.
-  await db.execute(sql`select 1`);
+  const access = await seedAccess(db);
   // biome-ignore lint/suspicious/noConsole: seed progress belongs in stdout for container logs.
-  console.log("[seed] connected — no seed data yet (lands with M1/M2/M3 tickets).");
+  console.log(
+    `[seed] access control: ${access.roles} roles, ${access.permissions} permission rows (idempotent).`,
+  );
 }
 
 main()
