@@ -103,6 +103,11 @@ services:
       DEV_ACTOR: ${DEV_ACTOR:-1}
       # Browser origins allowed to call the API (the console / portal SPAs).
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3002}
+      # Auth (M1.1, #20) — better-auth signing secret + the API's own public URL (email links are
+      # built against it). The staging overlay REQUIRES a real secret; the dev default is insecure.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-insecure-secret-change-in-production}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      APP_PORTAL_URL: ${APP_PORTAL_URL:-http://localhost:3000}
       # MinIO (S3) — file storage (ADR-0008)
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}

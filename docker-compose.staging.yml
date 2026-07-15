@@ -57,9 +57,15 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
       MINIO_BUCKET: ${MINIO_BUCKET:-vms-documents}
+      # Auth (M1.1, #20) — real secret required (no insecure default); public URLs for email links.
+      # NODE_ENV=production above also disables the dev-actor and enforces the secret at boot.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL}
+      APP_PORTAL_URL: ${PUBLIC_PORTAL_URL:?set PUBLIC_PORTAL_URL}
       # Real SMTP (Resend/SES/etc.) — no Mailpit fallback in staging.
       SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT:?set SMTP_PORT}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:?set SMTP_USER}
       SMTP_PASS: ${SMTP_PASS:?set SMTP_PASS}
       SMTP_FROM: ${SMTP_FROM:?set SMTP_FROM}
