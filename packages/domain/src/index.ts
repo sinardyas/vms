@@ -17,6 +17,9 @@ export * from "./errors";
 // Shared value types (enums + locale)
 export * from "./values";
 
+// Access control — request context, actor identity, RBAC `can()` + capability contract (M0.4)
+export * from "./access";
+
 // Zod validation (bridge + shared primitives)
 export * from "./schemas";
 

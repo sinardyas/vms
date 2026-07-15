@@ -2,9 +2,14 @@ import { db } from "@vms/db";
 import { APP_NAME } from "@vms/domain";
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
+import { type AppEnv, requestContext } from "./context";
 import { env } from "./env";
 
-const app = new Hono();
+const app = new Hono<AppEnv>();
+
+// Every request carries a RequestContext (actor, locale, ip/ua) — the M0.4 cross-cutting seam that
+// the audit writer and RBAC guard read. Actor resolution is unauthenticated until M1 wires auth.
+app.use("*", requestContext());
 
 app.get("/", (c) => c.text(`${APP_NAME} API — see /health`));
 
