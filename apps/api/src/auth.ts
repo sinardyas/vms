@@ -20,8 +20,23 @@ import { authAccounts, authSessions, authVerifications, db, users } from "@vms/d
 import { type Locale, resolveLocale } from "@vms/domain";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { type AuditAttribution, type AuditEntry, writeAuditRow } from "./audit";
 import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
 import { env } from "./env";
+
+/**
+ * Record an auth mutation in the audit trail (M1.4, ADR-0011). Registration and each sign-in are the
+ * only mutations that exist before feature work (M2+), and better-auth owns their write — so unlike a
+ * domain mutation (which shares its transaction with {@link writeAudit}), this runs post-hoc and is
+ * **best-effort**: a failed audit write is logged but never allowed to break the login it describes.
+ */
+const recordAuthEvent = async (attribution: AuditAttribution, entry: AuditEntry): Promise<void> => {
+  try {
+    await writeAuditRow(db, attribution, entry);
+  } catch (error) {
+    console.error("[audit] failed to record auth event", entry.action, error);
+  }
+};
 
 /** Best-effort locale for a transactional email: `?lang` → `locale` cookie → `Accept-Language` → id. */
 const localeFromRequest = (request?: Request): Locale => {
@@ -101,6 +116,37 @@ export const auth = betterAuth({
         url,
         locale: localeFromRequest(request),
       });
+    },
+  },
+
+  // Audit the auth mutations (M1.4, ADR-0011): a user row created → `user.registered`, a session
+  // created → `user.signed_in`. Each is attributed to the acting user (the new account signs itself
+  // up; the session belongs to whoever just logged in) and stamped with the request's ip / user-agent
+  // where better-auth captured it on the session. Best-effort so an audit hiccup never blocks auth.
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          await recordAuthEvent(
+            { actorUserId: user.id },
+            { action: "user.registered", subjectType: "user", subjectId: user.id },
+          );
+        },
+      },
+    },
+    session: {
+      create: {
+        after: async (session) => {
+          await recordAuthEvent(
+            {
+              actorUserId: session.userId,
+              ip: session.ipAddress ?? undefined,
+              userAgent: session.userAgent ?? undefined,
+            },
+            { action: "user.signed_in", subjectType: "user", subjectId: session.userId },
+          );
+        },
+      },
     },
   },
 });
