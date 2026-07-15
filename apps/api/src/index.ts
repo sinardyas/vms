@@ -8,6 +8,7 @@ import { auth } from "./auth";
 import { type AppEnv, requestContext } from "./context";
 import { devActorResolver } from "./dev-actor";
 import { env } from "./env";
+import { meRoutes } from "./me-route";
 import { sessionActorResolver } from "./session-actor";
 
 const app = new Hono<AppEnv>();
@@ -43,6 +44,11 @@ app.get("/health/db", async (c) => {
     return c.json({ ok: false, db: "down", error: String(error) }, 503);
   }
 });
+
+// M1.3 (#22): the session's identity + capability grid — the server-authored mirror the UI reads to
+// show/hide affordances. Computed from the same permission set the RBAC guard evaluates, so a hidden
+// button is a refused request. 401 for an anonymous caller (deny-by-default).
+app.route("/", meRoutes());
 
 // Walking skeleton (#8, M0.6): guard → audit write → DB read → JSON the console renders in @vms/ui.
 app.route("/console", auditRoutes());
