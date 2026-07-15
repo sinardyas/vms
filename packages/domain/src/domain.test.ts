@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { type Actor, can, capabilities, permissionKey, toPermissionSet } from "./access";
 import { forbiddenError, isDomainError, validationError } from "./errors";
 import { translate, translator } from "./i18n";
 import { err, isErr, isOk, map, ok, unwrapOr } from "./result";
@@ -72,5 +73,34 @@ describe("values + schemas", () => {
     expect(resolveLocale("en")).toBe("en");
     expect(resolveLocale("fr")).toBe("id");
     expect(resolveLocale(undefined)).toBe("id");
+  });
+});
+
+describe("RBAC seam", () => {
+  const actor: Actor = {
+    userId: "u1",
+    kind: "internal",
+    email: "staff@soechi.id",
+    name: "Staff",
+    permissions: toPermissionSet([
+      { module: "vendors", verb: "view" },
+      { module: "vendors", verb: "edit" },
+    ]),
+  };
+
+  test("can() is deny-by-default and grant-driven", () => {
+    expect(can(actor, "vendors", "view")).toBe(true);
+    expect(can(actor, "vendors", "delete")).toBe(false); // not granted
+    expect(can(actor, "access", "view")).toBe(false); // other module
+    expect(can(null, "vendors", "view")).toBe(false); // unauthenticated
+    expect(permissionKey("vendors", "view")).toBe("vendors:view");
+  });
+
+  test("capabilities() expands the set into the full module×verb map", () => {
+    const flags = capabilities(actor.permissions);
+    expect(flags.vendors.view).toBe(true);
+    expect(flags.vendors.edit).toBe(true);
+    expect(flags.vendors.delete).toBe(false);
+    expect(flags.audit.view).toBe(false);
   });
 });
