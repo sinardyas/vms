@@ -3,6 +3,7 @@ import { APP_NAME } from "@vms/domain";
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { accessRoutes } from "./access-route";
 import { auditRoutes } from "./audit-route";
 import { auth } from "./auth";
 import { type AppEnv, requestContext } from "./context";
@@ -52,5 +53,9 @@ app.route("/", meRoutes());
 
 // Walking skeleton (#8, M0.6): guard → audit write → DB read → JSON the console renders in @vms/ui.
 app.route("/console", auditRoutes());
+
+// M1.5 (#24): Access admin — Users/Roles CRUD + RBAC matrix editor, all gated on `access` and
+// deadlock-guarded (ADR-0011b). Mounted under the same authenticated `/console` prefix.
+app.route("/console/access", accessRoutes());
 
 export default { port: env.port, fetch: app.fetch };

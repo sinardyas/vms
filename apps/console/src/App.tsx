@@ -28,6 +28,7 @@ import {
   useCapabilities,
 } from "@vms/ui";
 import { useState } from "react";
+import { AccessAdmin } from "./features/access-admin";
 import { AuditLog } from "./features/audit-log";
 import { loadCapabilities } from "./lib/api";
 
@@ -152,6 +153,8 @@ function Console() {
         <Gallery />
       ) : current === "audit" ? (
         <AuditLog />
+      ) : current === "access" ? (
+        <AccessAdmin />
       ) : SOON_KEYS.has(current) ? (
         <ComingSoon title={title} />
       ) : (
