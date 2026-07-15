@@ -8,6 +8,7 @@ import { auditRoutes } from "./audit-route";
 import { auth } from "./auth";
 import { type AppEnv, requestContext } from "./context";
 import { devActorResolver } from "./dev-actor";
+import { documentMasterRoutes } from "./document-master-route";
 import { env } from "./env";
 import { meRoutes } from "./me-route";
 import { registrationListRoutes } from "./registration-lists-route";
@@ -63,5 +64,10 @@ app.route("/console/access", accessRoutes());
 // currencies, countries) vendor registration reads its dropdowns from — each a thin instantiation of
 // the M2.1 master framework (#32), gated on `registration_lists` and audited atomically.
 app.route("/console/registration-lists", registrationListRoutes());
+
+// M2.3 (#34): Document Master — the compliance doc-type list (bilingual, origin `applies_to` +
+// `mandatory`, active flag `enabled`) plus the M:N category-requirements matrix the M5.2 activation
+// gate reads. Also a thin instantiation of the M2.1 framework, gated on `document_master`.
+app.route("/console/document-master", documentMasterRoutes());
 
 export default { port: env.port, fetch: app.fetch };
