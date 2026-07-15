@@ -63,6 +63,18 @@ export const catalogue = {
   "enum.verifyStatus.verified": { id: "Terverifikasi", en: "Verified" },
   "enum.verifyStatus.rejected": { id: "Ditolak", en: "Rejected" },
 
+  // RBAC module labels (ADR-0012) — the 9 permission subjects. Codes stay neutral; these are the
+  // human labels the audit filter (M1.4) and the Access matrix editor (M1.5) render.
+  "enum.rbacModule.vendors": { id: "Vendor", en: "Vendors" },
+  "enum.rbacModule.documents": { id: "Dokumen", en: "Documents" },
+  "enum.rbacModule.approvals": { id: "Persetujuan", en: "Approvals" },
+  "enum.rbacModule.registration_lists": { id: "Daftar Registrasi", en: "Registration Lists" },
+  "enum.rbacModule.operational_lists": { id: "Daftar Operasional", en: "Operational Lists" },
+  "enum.rbacModule.approval_routes": { id: "Rute Persetujuan", en: "Approval Routes" },
+  "enum.rbacModule.document_master": { id: "Master Dokumen", en: "Document Master" },
+  "enum.rbacModule.access": { id: "Kontrol Akses", en: "Access Control" },
+  "enum.rbacModule.audit": { id: "Log Audit", en: "Audit Log" },
+
   // --- "Coming in a later phase" shells for out-of-Phase-0 sections (#9) ---
   "soon.badge": { id: "Fase Mendatang", en: "Later Phase" },
   "soon.title": { id: "Hadir pada fase berikutnya", en: "Coming in a later phase" },
@@ -113,16 +125,19 @@ export const catalogue = {
   },
   "auth.email.signature": { id: "Tim Soechi VMS", en: "The Soechi VMS team" },
 
-  // --- Audit-log screen — the M0.6 walking-skeleton slice (#8) ---
+  // --- Audit-log module — search/filter viewer over the action-log (M1.4, #8/#23) ---
   "audit.title": { id: "Log Audit", en: "Audit Log" },
   "audit.subtitle": {
     id: "Setiap tindakan dicatat sekali dan tidak pernah diubah — jejak yang hanya bertambah.",
     en: "Every action is recorded once and never edited — an append-only trail.",
   },
-  "audit.signedInAs": { id: "Masuk sebagai {name}", en: "Signed in as {name}" },
   "audit.refresh": { id: "Muat ulang", en: "Refresh" },
   "audit.loading": { id: "Memuat…", en: "Loading…" },
   "audit.empty": { id: "Belum ada tindakan yang tercatat.", en: "No actions recorded yet." },
+  "audit.noResults": {
+    id: "Tidak ada tindakan yang cocok dengan filter.",
+    en: "No actions match these filters.",
+  },
   "audit.loadError": {
     id: "Gagal memuat log audit.",
     en: "Couldn't load the audit log.",
@@ -134,6 +149,28 @@ export const catalogue = {
   "audit.col.module": { id: "Modul", en: "Module" },
   "audit.col.subject": { id: "Objek", en: "Subject" },
   "audit.col.ip": { id: "Alamat IP", en: "IP address" },
+
+  // Filters
+  "audit.filter.actor": { id: "Pelaku", en: "Actor" },
+  "audit.filter.actorPlaceholder": { id: "Nama atau email", en: "Name or email" },
+  "audit.filter.action": { id: "Tindakan", en: "Action" },
+  "audit.filter.actionPlaceholder": { id: "mis. user.signed_in", en: "e.g. user.signed_in" },
+  "audit.filter.module": { id: "Modul", en: "Module" },
+  "audit.filter.moduleAll": { id: "Semua modul", en: "All modules" },
+  "audit.filter.subject": { id: "Objek", en: "Subject" },
+  "audit.filter.subjectPlaceholder": { id: "mis. vendor, user", en: "e.g. vendor, user" },
+  "audit.filter.from": { id: "Dari", en: "From" },
+  "audit.filter.to": { id: "Sampai", en: "To" },
+  "audit.filter.apply": { id: "Terapkan", en: "Apply" },
+  "audit.filter.clear": { id: "Bersihkan", en: "Clear" },
+
+  // Pagination
+  "audit.page.showing": {
+    id: "Menampilkan {from}–{to} dari {total}",
+    en: "Showing {from}–{to} of {total}",
+  },
+  "audit.page.prev": { id: "Sebelumnya", en: "Previous" },
+  "audit.page.next": { id: "Berikutnya", en: "Next" },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */
