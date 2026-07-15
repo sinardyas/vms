@@ -9,8 +9,8 @@
  *   PORT         — listen port (default 8080)
  *   STATIC_ROOT  — directory to serve (default ./dist)
  */
-import { file } from "bun";
 import { join, normalize } from "node:path";
+import { file } from "bun";
 
 const root = process.env.STATIC_ROOT ?? "./dist";
 const port = Number(process.env.PORT ?? 8080);
@@ -40,5 +40,4 @@ Bun.serve({
   },
 });
 
-// biome-ignore lint/suspicious/noConsole: startup log is intentional for container logs.
 console.log(`Serving ${root} on :${port}`);
