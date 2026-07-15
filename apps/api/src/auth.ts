@@ -1,0 +1,108 @@
+/**
+ * Authentication (M1.1, #20, ADR-0004/0015) — better-auth on Bun + Hono.
+ *
+ * One `users` table with a `kind` discriminator (ADR-0004): the public sign-up path is for vendors
+ * (portal), internal users are created by staff (M1.2 seed / M1.5 admin). Portal vs console is
+ * authorization (RBAC), not separate auth stacks — both audiences authenticate here.
+ *
+ * The Drizzle adapter is pointed at the companion tables already in `@vms/db` (`users`,
+ * `auth_sessions`, `auth_accounts`, `auth_verifications`), keyed by better-auth's singular model
+ * names. Two schema reconciliations: better-auth's `password` field maps to our `passwordHash`
+ * column, and `kind` is injected as a non-input field defaulting to `vendor` so a public sign-up
+ * always yields a vendor without the client choosing its own kind.
+ *
+ * Email verification and password reset are required and go through the SMTP seam (`./email`,
+ * Mailpit in dev). The session this produces is read back per-request by {@link sessionActorResolver}
+ * to build the domain `Actor`.
+ */
+
+import { authAccounts, authSessions, authVerifications, db, users } from "@vms/db";
+import { type Locale, resolveLocale } from "@vms/domain";
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
+import { env } from "./env";
+
+/** Best-effort locale for a transactional email: `?lang` → `locale` cookie → `Accept-Language` → id. */
+const localeFromRequest = (request?: Request): Locale => {
+  if (!request) return "id";
+  const url = new URL(request.url);
+  const cookie = request.headers
+    .get("cookie")
+    ?.split(";")
+    .map((c) => c.trim().split("="))
+    .find(([k]) => k === "locale")?.[1];
+  const header = request.headers.get("accept-language")?.split(",")[0]?.split("-")[0]?.trim();
+  return resolveLocale(url.searchParams.get("lang") ?? cookie ?? header);
+};
+
+export const auth = betterAuth({
+  appName: "Soechi VMS",
+  secret: env.betterAuthSecret,
+  baseURL: env.betterAuthUrl,
+  basePath: "/api/auth",
+  trustedOrigins: env.corsOrigins,
+
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    // Keyed by better-auth's singular model names → our (differently-named) Drizzle tables.
+    schema: {
+      user: users,
+      session: authSessions,
+      account: authAccounts,
+      verification: authVerifications,
+    },
+  }),
+
+  // Our PKs are Postgres `uuid` columns. better-auth's default id generator emits opaque
+  // non-UUID strings, which the uuid columns reject — so have it mint real UUIDs instead.
+  advanced: { database: { generateId: "uuid" } },
+
+  // better-auth's account `password` field lives in our `passwordHash` column.
+  account: { fields: { password: "passwordHash" } },
+
+  // `kind` is NOT NULL with no DB default; force it server-side so a public sign-up is always a
+  // vendor and the client can never set it. Internal users are created outside this flow with kind set.
+  user: {
+    additionalFields: {
+      kind: {
+        type: "string",
+        required: true,
+        input: false,
+        defaultValue: "vendor",
+        returned: true,
+      },
+    },
+  },
+
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: true, // no session until the email is verified (ADR-0004)
+    minPasswordLength: 8,
+    autoSignIn: true,
+    sendResetPassword: async ({ user, url }, request) => {
+      await sendPasswordResetEmail({
+        to: user.email,
+        name: user.name,
+        url,
+        locale: localeFromRequest(request),
+      });
+    },
+  },
+
+  emailVerification: {
+    sendOnSignUp: true,
+    autoSignInAfterVerification: true,
+    expiresIn: 60 * 60, // 1 hour, mirrored by the email copy
+    sendVerificationEmail: async ({ user, url }, request) => {
+      await sendVerificationEmail({
+        to: user.email,
+        name: user.name,
+        url,
+        locale: localeFromRequest(request),
+      });
+    },
+  },
+});
+
+export type Auth = typeof auth;

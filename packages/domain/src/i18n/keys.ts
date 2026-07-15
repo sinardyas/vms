@@ -76,6 +76,43 @@ export const catalogue = {
     en: "Not functional — illustrates the intended flow only.",
   },
 
+  // --- Auth emails — verification + password reset (M1.1, #20, ADR-0004/0015) ---
+  // Transactional emails sent via SMTP (Mailpit in dev). Rendered in the recipient's locale,
+  // defaulting to `id`. `{name}`, `{url}`, `{minutes}` are interpolated at send time.
+  "auth.email.verify.subject": {
+    id: "Verifikasi alamat email Anda — Soechi VMS",
+    en: "Verify your email address — Soechi VMS",
+  },
+  "auth.email.verify.heading": { id: "Verifikasi email Anda", en: "Verify your email" },
+  "auth.email.verify.body": {
+    id: "Halo {name}, terima kasih telah mendaftar. Klik tombol di bawah untuk memverifikasi alamat email Anda dan mengaktifkan akun.",
+    en: "Hi {name}, thanks for registering. Click the button below to verify your email address and activate your account.",
+  },
+  "auth.email.verify.cta": { id: "Verifikasi email", en: "Verify email" },
+  "auth.email.reset.subject": {
+    id: "Atur ulang kata sandi Anda — Soechi VMS",
+    en: "Reset your password — Soechi VMS",
+  },
+  "auth.email.reset.heading": { id: "Atur ulang kata sandi", en: "Reset your password" },
+  "auth.email.reset.body": {
+    id: "Halo {name}, kami menerima permintaan untuk mengatur ulang kata sandi Anda. Klik tombol di bawah untuk memilih kata sandi baru.",
+    en: "Hi {name}, we received a request to reset your password. Click the button below to choose a new one.",
+  },
+  "auth.email.reset.cta": { id: "Atur ulang kata sandi", en: "Reset password" },
+  "auth.email.linkFallback": {
+    id: "Jika tombol tidak berfungsi, salin dan tempel tautan ini ke peramban Anda:",
+    en: "If the button doesn't work, copy and paste this link into your browser:",
+  },
+  "auth.email.expiry": {
+    id: "Tautan ini kedaluwarsa dalam {minutes} menit.",
+    en: "This link expires in {minutes} minutes.",
+  },
+  "auth.email.ignore": {
+    id: "Jika Anda tidak meminta ini, abaikan email ini dengan aman.",
+    en: "If you didn't request this, you can safely ignore this email.",
+  },
+  "auth.email.signature": { id: "Tim Soechi VMS", en: "The Soechi VMS team" },
+
   // --- Audit-log screen — the M0.6 walking-skeleton slice (#8) ---
   "audit.title": { id: "Log Audit", en: "Audit Log" },
   "audit.subtitle": {

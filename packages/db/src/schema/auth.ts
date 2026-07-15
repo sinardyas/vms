@@ -51,10 +51,12 @@ export const authAccounts = pgTable("auth_accounts", {
 });
 
 // Email-verification / password-reset tokens (ADR-0004 email-first).
+// better-auth's `verification` model requires both createdAt and updatedAt (M1.1, #20).
 export const authVerifications = pgTable("auth_verifications", {
   id: uuid().primaryKey().defaultRandom(),
   identifier: varchar({ length: 320 }).notNull(),
   value: text().notNull(),
   expiresAt: timestamp({ withTimezone: true }).notNull(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
