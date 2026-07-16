@@ -17,6 +17,7 @@ import { type Result, err, ok } from "../result";
 export * from "./common";
 export * from "./vendor";
 export * from "./vendor-bank";
+export * from "./vendor-change";
 export * from "./vendor-document";
 export * from "./vendor-submit";
 

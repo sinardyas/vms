@@ -17,17 +17,38 @@
  * not here — this module only computes *what the decision does*.
  */
 
+import type { ApprovalTrigger } from "../values/enums";
+
 /** What an approver did to the current step. */
 export type ApprovalDecision = "approve" | "reject";
+
+/**
+ * The two families of trigger the engine drives, which decide what a final approve / a reject *means*:
+ *   - **Registration** (`new_vendor_registration`, `office_vendor_registration`, `reactivation`) — the
+ *     subject is a Draft/Inactive vendor becoming Active; final approve **activates** it, reject returns
+ *     it to Draft (ADR-0005).
+ *   - **Edit** (`bank_change`, `non_bank_change`) — the subject is an *already-Active* vendor whose live
+ *     record is untouched while a proposed **diff** rides on the request (ADR-0005/0010, M4.5); final
+ *     approve **applies** the diff, reject **discards** it — either way the vendor stays Active.
+ *
+ * An edit trigger is exactly a post-activation change (bank or non-bank); everything else is registration
+ * (or reactivation, which is registration-like — it lands the subject Active).
+ */
+export const isEditTrigger = (trigger: ApprovalTrigger): boolean =>
+  trigger === "bank_change" || trigger === "non_bank_change";
 
 /** The effect a decision lands on the request's subject (e.g. the vendor under registration). */
 export type SubjectEffect =
   /** No subject change — the request advanced to a further step. */
   | "none"
-  /** Final approval — apply the trigger's effect (registration: vendor → `active`, subject to M5). */
+  /** Registration final approval — activate the subject (vendor → `active`, subject to M5). */
   | "activate"
-  /** Rejection — return the subject to `Draft` with reasons (resumable). */
-  | "return_to_draft";
+  /** Registration rejection — return the subject to `Draft` with reasons (resumable). */
+  | "return_to_draft"
+  /** Edit final approval (M4.5) — apply the request's diff to the (still-Active) subject, clear the flag. */
+  | "apply_change"
+  /** Edit rejection (M4.5) — discard the request's diff; the subject is unchanged, clear the flag. */
+  | "discard_change";
 
 /** The resolved status a decision leaves on the {@link ApprovalRequest}. */
 export type RequestStatus = "pending" | "approved" | "rejected";
@@ -48,11 +69,14 @@ export type DecisionOutcome = {
 };
 
 /**
- * Compute the outcome of `decision` taken on step `currentStepNo` of a `totalSteps`-step route.
+ * Compute the outcome of `decision` taken on step `currentStepNo` of a `totalSteps`-step route for a
+ * request of the given `trigger`. The trigger decides what resolution *means* ({@link isEditTrigger}):
  *
- * - **Reject** (any step) → request `rejected`, subject returns to Draft, resolved.
+ * - **Reject** (any step) → request `rejected`, resolved. Registration → subject returns to Draft;
+ *   edit → the diff is discarded (`discard_change`), the Active subject unchanged.
  * - **Approve** a non-final step → request stays `pending`, advance to the next step (no subject effect).
- * - **Approve** the final step → request `approved`, subject effect `activate`, resolved.
+ * - **Approve** the final step → request `approved`, resolved. Registration → subject `activate`;
+ *   edit → the diff is applied to the still-Active subject (`apply_change`).
  *
  * `currentStepNo` is 1-based and assumed in `[1, totalSteps]` (the caller only decides an open step of
  * a pending request). `totalSteps` is the route's resolved step count (≥ 1).
@@ -61,11 +85,13 @@ export const applyDecision = (
   currentStepNo: number,
   totalSteps: number,
   decision: ApprovalDecision,
+  trigger: ApprovalTrigger,
 ): DecisionOutcome => {
+  const edit = isEditTrigger(trigger);
   if (decision === "reject") {
     return {
       requestStatus: "rejected",
-      subjectEffect: "return_to_draft",
+      subjectEffect: edit ? "discard_change" : "return_to_draft",
       advanceToStepNo: null,
       resolved: true,
     };
@@ -74,7 +100,7 @@ export const applyDecision = (
   if (isFinalStep) {
     return {
       requestStatus: "approved",
-      subjectEffect: "activate",
+      subjectEffect: edit ? "apply_change" : "activate",
       advanceToStepNo: null,
       resolved: true,
     };
