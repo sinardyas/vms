@@ -4,6 +4,7 @@ import {
   ChatCircleDots,
   ClipboardText,
   FileText,
+  FlowArrow,
   Gauge,
   Handshake,
   Invoice,
@@ -30,6 +31,7 @@ import {
 } from "@vms/ui";
 import { useState } from "react";
 import { AccessAdmin } from "./features/access-admin";
+import { ApprovalRoutes } from "./features/approval-routes";
 import { AuditLog } from "./features/audit-log";
 import { DocumentMaster } from "./features/document-master";
 import { RegistrationLists } from "./features/registration-lists";
@@ -58,6 +60,7 @@ const NAV: NavGroup[] = [
     items: [
       { key: "master-data", label: "Master Data", icon: ClipboardText },
       { key: "document-master", label: "Document Master", icon: FileText },
+      { key: "approval-routes", label: "Approval Routes", icon: FlowArrow },
       { key: "access", label: "Access Control", icon: ShieldCheck },
       { key: "audit", label: "Audit Log", icon: ChartBar },
       { key: "components", label: "Design System", icon: SquaresFour },
@@ -76,6 +79,7 @@ const TITLES: Record<string, string> = {
   communications: "Communications",
   "master-data": "Master Data",
   "document-master": "Document Master",
+  "approval-routes": "Approval Routes",
   access: "Access Control",
   audit: "Audit Log",
   components: "Design System",
@@ -102,6 +106,7 @@ const NAV_GATE: Partial<Record<string, RbacModule>> = {
   approvals: "approvals",
   "master-data": "registration_lists",
   "document-master": "document_master",
+  "approval-routes": "approval_routes",
   access: "access",
   audit: "audit",
 };
@@ -165,6 +170,8 @@ function Console() {
         <RegistrationLists />
       ) : current === "document-master" ? (
         <DocumentMaster />
+      ) : current === "approval-routes" ? (
+        <ApprovalRoutes />
       ) : SOON_KEYS.has(current) ? (
         <ComingSoon title={title} />
       ) : (
