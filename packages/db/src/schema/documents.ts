@@ -1,4 +1,13 @@
-import { date, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  date,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
 import { timestamps } from "./_shared";
 import { verifyStatusEnum } from "./enums";
 import { users } from "./auth";
@@ -38,6 +47,11 @@ export const documentVersions = pgTable(
     fileId: uuid()
       .notNull()
       .references(() => files.id),
+    // Certificate / registration number typed beside the upload (drift-audit #4 P0) —
+    // generalises No. NPWP / No. SIUP / No. NIB / deed no. `vendors.taxId` stays the dedup key.
+    refNo: varchar({ length: 120 }),
+    // Document sub-variant (drift-audit #4 P1) — e.g. Jenis Akta: Pendirian / Perubahan Nama / Amendment.
+    variant: varchar({ length: 60 }),
     // Real certificate dates entered by the vendor, confirmed by the verifier (ADR-0010).
     issuedOn: date(),
     expiresOn: date(), // = validUntil
