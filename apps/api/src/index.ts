@@ -11,6 +11,7 @@ import { auth } from "./auth";
 import { type AppEnv, requestContext } from "./context";
 import { devActorResolver } from "./dev-actor";
 import { documentMasterRoutes } from "./document-master-route";
+import { documentVerificationRoutes } from "./document-verification-route";
 import { env } from "./env";
 import { meRoutes } from "./me-route";
 import { operationalListRoutes } from "./operational-lists-route";
@@ -90,6 +91,13 @@ app.route("/console/approval-routes", approvalRouteRoutes());
 // every decision audited. SoD + escalation are M4.3; the M5.2 activation gate slots into the `activate`
 // effect; M4.6 builds the console UX on these endpoints.
 app.route("/console/approvals", approvalRoutes());
+
+// M5.1 (#68): Document verification — the Document Verifier's queue + per-document verify/reject actions
+// (issue/expiry entered/confirmed at verify, reason on reject), gated on the `documents` module
+// (`documents:approve`, SoD-distinct from `approvals:approve`, ADR-0007/0014) and atomically audited.
+// Acts only on current versions of Pending vendors; sets the verify state the M5.2 activation gate and
+// the M5.3 reject→Draft/re-upload flow later read. Console UX is M5.4.
+app.route("/console/document-verification", documentVerificationRoutes());
 
 // M2.5 (#36): Operational lists — the six behaviorally-inert reference lists (departments, soechi
 // entities, vessels, ports, tax codes, SLA thresholds) the console manages but nothing in Phase-0 acts
