@@ -53,6 +53,20 @@ export type IneligibilityReason = "missing-permission" | "self-approval" | "veri
 export const APPROVE_PERMISSION: Permission = { module: "approvals", verb: "approve" };
 
 /**
+ * The grant that authorises an **admin override** of a zero-eligible step (M4.3, ADR-0014). When SoD +
+ * permissions leave a step with no eligible approver, the request must not silently stall — a holder of
+ * this grant may approve it as an override (audited, `is_override`). It is `approvals:edit` — "administer
+ * the approval workflow", distinct from `approvals:approve` ("decide a step you are eligible for") — which
+ * in the seeded grid only the System Administrator holds (the four approver roles hold `view`+`approve`
+ * only). Reusing an existing verb keeps override authority in the RBAC vocabulary with no new enum.
+ */
+export const OVERRIDE_PERMISSION: Permission = { module: "approvals", verb: "edit" };
+
+/** Whether `candidate` may perform an admin override — holds {@link OVERRIDE_PERMISSION} (M4.3, ADR-0014). */
+export const hasOverrideAuthority = (candidate: ApproverCandidate): boolean =>
+  candidate.permissions.has(permissionKey(OVERRIDE_PERMISSION.module, OVERRIDE_PERMISSION.verb));
+
+/**
  * Why `candidate` cannot approve under `sod`, or `null` if eligible. Checks the RBAC intersection
  * first (missing the `required` grant → `"missing-permission"`), then subtracts SoD in ADR-0009
  * order: submitter (`"self-approval"`) before document verifier (`"verifier"`).

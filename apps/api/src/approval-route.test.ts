@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type Actor, type RbacVerb, toPermissionSet } from "@vms/domain";
+import { type Actor, type PermissionSet, type RbacVerb, toPermissionSet } from "@vms/domain";
 import { Hono } from "hono";
 import {
   type ApprovalRequestDetailDTO,
@@ -79,11 +79,12 @@ const detail: ApprovalRequestDetailDTO = {
 type Spy = {
   listFilters: QueueFilter[];
   decideCalls: { requestId: string; decision: string; reason: string | null }[];
+  deciderPerms: PermissionSet[];
   reassignCalls: { requestId: string; stepNo: number; assigneeUserId: string }[];
 };
 
 const fakeStore = (overrides: Partial<ApprovalStore> = {}): ApprovalStore & { spy: Spy } => {
-  const spy: Spy = { listFilters: [], decideCalls: [], reassignCalls: [] };
+  const spy: Spy = { listFilters: [], decideCalls: [], deciderPerms: [], reassignCalls: [] };
   return {
     spy,
     listOpen: async (filter) => {
@@ -114,6 +115,7 @@ const fakeStore = (overrides: Partial<ApprovalStore> = {}): ApprovalStore & { sp
         decision: input.decision,
         reason: input.reason,
       });
+      spy.deciderPerms.push(input.deciderPermissions);
       return { ok: true, detail };
     },
     reassign: async (_ctx, input) => {
@@ -290,6 +292,47 @@ describe("POST /:id/approve", () => {
     const body = (await res.json()) as { error: { messageKey: string; params: unknown } };
     expect(body.error.messageKey).toBe("error.approval.activationGateBlocked");
     expect(body.error.params).toEqual({ verified: 1, required: 3 });
+  });
+
+  // M4.3 — the SoD + escalation store outcomes each surface as a localized 403.
+  test("submitter self-approval → 403 selfApproval", async () => {
+    const store = fakeStore({ decide: async () => ({ ok: false, reason: "self_approval" }) });
+    const res = await mount(() => actor(["approve"]), store).request(
+      `/console/approvals/${REQ}/approve`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.messageKey).toBe("error.approval.selfApproval");
+  });
+
+  test("verifier ≠ approver → 403 verifierConflict", async () => {
+    const store = fakeStore({ decide: async () => ({ ok: false, reason: "verifier" }) });
+    const res = await mount(() => actor(["approve"]), store).request(
+      `/console/approvals/${REQ}/approve`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.messageKey).toBe("error.approval.verifierConflict");
+  });
+
+  test("zero-eligible without override authority → 403 overrideRequired", async () => {
+    const store = fakeStore({ decide: async () => ({ ok: false, reason: "override_required" }) });
+    const res = await mount(() => actor(["approve"]), store).request(
+      `/console/approvals/${REQ}/approve`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.messageKey).toBe("error.approval.overrideRequired");
+  });
+
+  test("passes the decider's resolved permissions to the store", async () => {
+    const store = fakeStore();
+    await mount(() => actor(["approve"]), store).request(
+      `/console/approvals/${REQ}/approve`,
+      json("POST", {}),
+    );
+    // the actor holds approvals:approve → the store receives it for the eligibility/override checks
+    expect(store.spy.deciderPerms.at(-1)?.has("approvals:approve")).toBe(true);
   });
 });
 
