@@ -25,8 +25,11 @@ import { db as defaultDb, files, vendorBankCurrencies, vendorBanks, vendors } fr
 import {
   type RequestContext,
   type VendorBankInput,
+  type VendorStatus,
   bankCountryRemarkRequired,
+  conflictError,
   invariantError,
+  isCaptureEditable,
   missingHolderProof,
   notFoundError,
   parseWith,
@@ -67,7 +70,12 @@ export type VendorBankDTO = {
 };
 
 /** Just enough of the vendor to run the invariants: does it exist, and what's its country? */
-export type VendorRef = { readonly id: string; readonly countryId: string | null };
+export type VendorRef = {
+  readonly id: string;
+  readonly countryId: string | null;
+  /** Lifecycle status — bank capture is frozen once the vendor leaves Draft (M4.4, ADR-0014). */
+  readonly status: VendorStatus;
+};
 
 /**
  * The data-access seam behind the router — every DB touch, so the route is testable with a fake. The
@@ -176,7 +184,7 @@ export const drizzleVendorBankStore = (dbHandle = defaultDb): VendorBankStore =>
   return {
     getVendor: async (vendorId) => {
       const [row] = await dbHandle
-        .select({ id: vendors.id, countryId: vendors.countryId })
+        .select({ id: vendors.id, countryId: vendors.countryId, status: vendors.status })
         .from(vendors)
         .where(eq(vendors.id, vendorId))
         .limit(1);
@@ -330,6 +338,13 @@ export const drizzleVendorBankStore = (dbHandle = defaultDb): VendorBankStore =>
 /* ── Route ──────────────────────────────────────────────────────────────────────────────────────── */
 
 /**
+ * The freeze 409 (M4.4, ADR-0014): once a vendor leaves Draft its banks are immutable — the same
+ * `notDraft` invariant the profile edit gate returns, so capture messaging stays identical across
+ * profile/banks/documents. Change then goes through recall or an approver's rejection.
+ */
+const frozenError = () => conflictError({ messageKey: "error.vendor.notDraft" });
+
+/**
  * Enforce the two per-account business invariants the schema can't (one needs the vendor country). A
  * returned error is a 422; `null` means the account is sound. Reused by create + update.
  */
@@ -376,6 +391,7 @@ export const vendorBanksRoutes = (
   app.post("/:vendorId/banks/attachments", requirePermission(MODULE, "edit"), async (c) => {
     const vendor = await store.getVendor(c.req.param("vendorId"));
     if (!vendor) return sendError(c, notFoundError());
+    if (!isCaptureEditable(vendor.status)) return sendError(c, frozenError());
     let body: Record<string, unknown>;
     try {
       body = await c.req.parseBody();
@@ -419,6 +435,7 @@ export const vendorBanksRoutes = (
   app.post("/:vendorId/banks", requirePermission(MODULE, "add"), async (c) => {
     const vendor = await store.getVendor(c.req.param("vendorId"));
     if (!vendor) return sendError(c, notFoundError());
+    if (!isCaptureEditable(vendor.status)) return sendError(c, frozenError());
     const parsed = await parseBankBody(c);
     if (!parsed.ok) return sendError(c, parsed.error);
     const bad = bankInvariant(parsed.value, vendor);
@@ -429,6 +446,7 @@ export const vendorBanksRoutes = (
   app.put("/:vendorId/banks/:bankId", requirePermission(MODULE, "edit"), async (c) => {
     const vendor = await store.getVendor(c.req.param("vendorId"));
     if (!vendor) return sendError(c, notFoundError());
+    if (!isCaptureEditable(vendor.status)) return sendError(c, frozenError());
     const parsed = await parseBankBody(c);
     if (!parsed.ok) return sendError(c, parsed.error);
     const bad = bankInvariant(parsed.value, vendor);
@@ -438,6 +456,9 @@ export const vendorBanksRoutes = (
   });
 
   app.delete("/:vendorId/banks/:bankId", requirePermission(MODULE, "delete"), async (c) => {
+    const vendor = await store.getVendor(c.req.param("vendorId"));
+    if (!vendor) return sendError(c, notFoundError());
+    if (!isCaptureEditable(vendor.status)) return sendError(c, frozenError());
     const item = await store.remove(c.var.ctx, c.req.param("vendorId"), c.req.param("bankId"));
     return item === null ? sendError(c, notFoundError()) : c.json({ item });
   });
