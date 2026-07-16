@@ -1075,6 +1075,58 @@ export const catalogue = {
     id: "Gagal membatalkan perubahan.",
     en: "Failed to cancel the change.",
   },
+
+  // --- Vendor profile: raise a post-activation change (M4.6b, #67) ---
+  "console.vendorProfile.requestChange": { id: "Ajukan perubahan", en: "Request change" },
+  "console.vendorProfile.changeKindTitle": {
+    id: "Apa yang ingin diubah?",
+    en: "What would you like to change?",
+  },
+  "console.vendorProfile.changeKindProfile": { id: "Profil perusahaan", en: "Company profile" },
+  "console.vendorProfile.changeKindProfileSub": {
+    id: "Identitas, alamat, kontak, dan pembayaran",
+    en: "Identity, address, contacts, and payment",
+  },
+  "console.vendorProfile.changeKindBank": { id: "Rekening bank", en: "Bank accounts" },
+  "console.vendorProfile.changeKindBankSub": {
+    id: "Tambah, ubah, atau hapus rekening",
+    en: "Add, edit, or remove accounts",
+  },
+  "console.vendorProfile.changeProfileTitle": {
+    id: "Ajukan perubahan profil",
+    en: "Request a profile change",
+  },
+  "console.vendorProfile.changeBankTitle": {
+    id: "Ajukan perubahan bank",
+    en: "Request a bank change",
+  },
+  "console.vendorProfile.changeIntro": {
+    id: "Perubahan pada vendor aktif memerlukan persetujuan. Rekaman tetap aktif hingga perubahan disetujui; edit langsung terkunci.",
+    en: "Changes to an active vendor need approval. The record stays active until the change is approved; direct edits are locked.",
+  },
+  "console.vendorProfile.changeSubmit": {
+    id: "Kirim permintaan perubahan",
+    en: "Submit change request",
+  },
+  "console.vendorProfile.changeSubmitted": {
+    id: "Permintaan perubahan diajukan untuk persetujuan.",
+    en: "Change request submitted for approval.",
+  },
+  "console.vendorProfile.changeBankAdd": { id: "Tambah rekening", en: "Add account" },
+  "console.vendorProfile.changeBankEdit": { id: "Ubah", en: "Edit" },
+  "console.vendorProfile.changeBankSetPrimary": { id: "Jadikan utama", en: "Make primary" },
+  "console.vendorProfile.changeBankEmpty": {
+    id: "Belum ada rekening. Tambahkan minimal satu.",
+    en: "No accounts yet. Add at least one.",
+  },
+  "console.vendorProfile.changeBankAttachRetained": {
+    id: "Lampiran yang ada dipertahankan untuk rekening ini.",
+    en: "This account's existing attachments are retained.",
+  },
+  "console.vendorProfile.changeBankHolderNote": {
+    id: "Rekening baru harus atas nama perusahaan — lampiran baru tidak dapat diunggah saat mengajukan perubahan.",
+    en: "A new account must be held by the company — new attachments can't be uploaded when raising a change.",
+  },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */
