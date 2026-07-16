@@ -52,6 +52,7 @@ import {
   type TaxStatus,
   type VendorBankInput,
   type VendorDraftInput,
+  type VendorProfileChangeInput,
   type VendorSource,
   type VendorSubmissionCandidate,
   checkVendorSubmittable,
@@ -67,7 +68,7 @@ import {
 } from "@vms/domain";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { type Context, Hono } from "hono";
-import { isOnePendingChange, openRegistrationRequest } from "./approval-engine";
+import { isOnePendingChange, openApprovalRequest } from "./approval-engine";
 import { writeAudit } from "./audit";
 import type { AppEnv } from "./context";
 import { sendError } from "./http-error";
@@ -246,8 +247,12 @@ const toDTO = (row: typeof vendors.$inferSelect): VendorDTO => ({
   changePending: row.changePending,
 });
 
-/** The Draft columns a screen fills in (null out anything the payload omits — a lenient partial save). */
-const profileValues = (input: VendorDraftInput) => ({
+/**
+ * The Draft columns a screen fills in (null out anything the payload omits — a lenient partial save).
+ * Reads no lifecycle fields (`origin`/`source`/`status`), so a post-activation non-bank change payload
+ * ({@link VendorProfileChangeInput}, which omits those) applies through the same mapping (M4.5).
+ */
+export const profileValues = (input: VendorProfileChangeInput) => ({
   name: input.name,
   businessEntityId: input.businessEntityId ?? null,
   categoryId: input.categoryId ?? null,
@@ -526,7 +531,7 @@ export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
       const trigger =
         targetStatus === "pending_hod" ? "office_vendor_registration" : "new_vendor_registration";
       try {
-        await openRegistrationRequest(tx, ctx, {
+        await openApprovalRequest(tx, ctx, {
           vendorId,
           trigger,
           submitterUserId: ctx.actor?.userId ?? null,
