@@ -89,9 +89,15 @@ app.route("/console/approval-routes", approvalRouteRoutes());
 app.route("/console/operational-lists", operationalListRoutes());
 
 // M3.5 (#46): own-vendor scoping — a vendor-kind actor may only reach a `:vendorId` they belong to
-// (internal staff bypass, bounded by RBAC). Mounted BEFORE the vendor sub-routers so it guards their
-// `:vendorId` bank/document paths; the aggregate route enforces the same on its own read/edit/submit.
-app.use("/vendors/:vendorId/*", requireVendorOwnership());
+// (internal staff bypass, bounded by RBAC). Scoped to the bank/document sub-paths specifically (NOT a
+// broad `/vendors/:vendorId/*`, whose `*` also matches `/vendors/me` and would bind vendorId="me" →
+// a UUID error in the guard); the aggregate route enforces the same guard inline on its own
+// read/edit/submit, and `/vendors/me` is the caller's own record so it needs no ownership check.
+const vendorOwnership = requireVendorOwnership();
+app.use("/vendors/:vendorId/banks", vendorOwnership);
+app.use("/vendors/:vendorId/banks/*", vendorOwnership);
+app.use("/vendors/:vendorId/documents", vendorOwnership);
+app.use("/vendors/:vendorId/documents/*", vendorOwnership);
 
 // M3.5 (#46): Vendor aggregate root — self-registration capture + submit (account-first, resumable
 // Draft → Pending). `GET /vendors/me` resumes; `POST /vendors` creates a Draft + owner link; PUT saves
