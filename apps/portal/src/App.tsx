@@ -1,110 +1,193 @@
+/**
+ * Vendor Portal shell (M3.5, #46).
+ *
+ * The light-sidebar skin of the shared AppShell, gated on a live session. Unauthenticated (no session /
+ * unverified email) → the auth screens; signed in → the portal proper: Dashboard, **My Registration**
+ * (the resumable self-registration wizard), Documents, beside the out-of-Phase-0 "soon" shells (#9).
+ *
+ * Session presence is read through the capability mirror (`GET /me`): `anonymous`/`error` means no
+ * usable session, `ready` means signed in. Signing in or out re-loads the grid, flipping the whole app.
+ */
+
 import {
   ChatCircleDots,
   FileText,
   Gauge,
   Invoice,
   Package,
-  SquaresFour,
   UserCircle,
 } from "@phosphor-icons/react";
 import { APP_NAME } from "@vms/domain";
 import {
   AppShell,
+  Button,
+  CapabilitiesProvider,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   ComingSoon,
-  Gallery,
   LocaleProvider,
   LocaleSwitch,
   type NavGroup,
+  StatusPill,
   ToastProvider,
+  useCapabilities,
+  useLocale,
+  useT,
 } from "@vms/ui";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { AuthScreens } from "./features/auth-screens";
+import { Registration } from "./features/registration";
+import { loadCapabilities } from "./lib/api";
+import { signOut } from "./lib/auth";
+import { type VendorDTO, vendorApi } from "./lib/vendor";
 
-/**
- * Vendor Portal shell (M0.5). The light-sidebar skin of the shared AppShell. Real Phase-0 sections
- * (Registration, Documents) sit beside the out-of-scope "soon" shells (#9). The Dashboard renders
- * the @vms/ui gallery so reviewers can eyeball the extracted design system against the prototype.
- */
-const NAV: NavGroup[] = [
-  {
-    label: "Vendor Portal",
-    items: [
-      { key: "dashboard", label: "Dashboard", icon: Gauge },
-      { key: "registration", label: "My Registration", icon: UserCircle },
-      { key: "documents", label: "Documents", icon: FileText },
-      { key: "components", label: "Design System", icon: SquaresFour },
-    ],
-  },
-  {
-    label: "Coming soon",
-    items: [
-      { key: "invoices", label: "Invoices", icon: Invoice, soon: true },
-      { key: "orders", label: "Purchase Orders", icon: Package, soon: true },
-      { key: "messages", label: "Communications", icon: ChatCircleDots, soon: true },
-    ],
-  },
-];
+/** A small landing card: the vendor's current registration status + a jump into the wizard. */
+function Dashboard({ onGoRegister }: { onGoRegister: () => void }) {
+  const { locale } = useLocale();
+  const t = useT();
+  const [vendor, setVendor] = useState<VendorDTO | null>(null);
+  useEffect(() => {
+    vendorApi
+      .getMe(locale)
+      .then(setVendor)
+      .catch(() => setVendor(null));
+  }, [locale]);
 
-const TITLES: Record<string, string> = {
-  dashboard: "Dashboard",
-  registration: "My Registration",
-  documents: "Documents",
-  components: "Design System",
-  invoices: "Invoices",
-  orders: "Purchase Orders",
-  messages: "Communications",
-};
-
-/** Out-of-Phase-0 sections — the ones the nav flags `soon` — render the ComingSoon shell (#9). */
-const SOON_KEYS = new Set(
-  NAV.flatMap((g) => g.items)
-    .filter((i) => i.soon)
-    .map((i) => i.key),
-);
-
-/** In-scope Phase-0 screen that hasn't landed yet — distinct from the out-of-Phase-0 shell. */
-function Placeholder({ title }: { title: string }) {
   return (
-    <Card>
+    <Card className="max-w-2xl">
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle>{t("portal.status.title")}</CardTitle>
       </CardHeader>
-      <CardContent className="text-sm text-muted-foreground">
-        Phase-0 scaffold. This screen lands in a later milestone (see the wayfinder map).
+      <CardContent className="flex flex-col gap-4">
+        {vendor ? (
+          <>
+            <div className="flex items-center gap-3">
+              <span className="font-bold text-foreground">{vendor.name}</span>
+              <StatusPill tone={vendor.status === "draft" ? "neutral" : "pending"}>
+                {vendor.status === "draft" ? t("portal.status.draft") : t("portal.status.pending")}
+              </StatusPill>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {vendor.status === "draft"
+                ? t("portal.status.draftBody")
+                : t("portal.status.pendingBody")}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t("portal.reg.startBody")}</p>
+        )}
+        <div>
+          <Button onClick={onGoRegister}>{t("portal.nav.registration")}</Button>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-export default function App() {
+/** The authenticated portal — nav + section switch. */
+function Portal() {
+  const t = useT();
+  const { reload } = useCapabilities();
   const [active, setActive] = useState("dashboard");
-  const showGallery = active === "dashboard" || active === "components";
-  const title = TITLES[active] ?? "Section";
 
+  const nav: NavGroup[] = [
+    {
+      label: t("portal.shell.subtitle"),
+      items: [
+        { key: "dashboard", label: t("portal.nav.dashboard"), icon: Gauge },
+        { key: "registration", label: t("portal.nav.registration"), icon: UserCircle },
+        { key: "documents", label: t("portal.nav.documents"), icon: FileText },
+      ],
+    },
+    {
+      label: t("soon.badge"),
+      items: [
+        { key: "invoices", label: "Invoices", icon: Invoice, soon: true },
+        { key: "orders", label: "Purchase Orders", icon: Package, soon: true },
+        { key: "messages", label: "Communications", icon: ChatCircleDots, soon: true },
+      ],
+    },
+  ];
+
+  const soon = new Set(
+    nav
+      .flatMap((g) => g.items)
+      .filter((i) => i.soon)
+      .map((i) => i.key),
+  );
+
+  const doSignOut = async () => {
+    await signOut();
+    reload();
+  };
+
+  const titleKey =
+    active === "registration"
+      ? "portal.nav.registration"
+      : active === "documents"
+        ? "portal.nav.documents"
+        : "portal.nav.dashboard";
+
+  return (
+    <AppShell
+      variant="light"
+      brand={{ title: APP_NAME, subtitle: t("portal.shell.subtitle") }}
+      groups={nav}
+      activeKey={active}
+      onNavigate={setActive}
+      user={{ name: APP_NAME, role: t("portal.shell.subtitle") }}
+      title={t(titleKey)}
+      headerRight={
+        <div className="flex items-center gap-2">
+          <LocaleSwitch />
+          <Button variant="ghost" size="sm" onClick={doSignOut}>
+            {t("portal.auth.signOut")}
+          </Button>
+        </div>
+      }
+    >
+      {active === "dashboard" ? (
+        <Dashboard onGoRegister={() => setActive("registration")} />
+      ) : active === "registration" ? (
+        <Registration />
+      ) : active === "documents" ? (
+        <Registration documentsOnly />
+      ) : soon.has(active) ? (
+        <ComingSoon title={active} />
+      ) : (
+        <Dashboard onGoRegister={() => setActive("registration")} />
+      )}
+    </AppShell>
+  );
+}
+
+/** Session gate: loading → spinner; no session → auth screens; signed in → the portal. */
+function Root() {
+  const t = useT();
+  const { status, reload } = useCapabilities();
+
+  if (status === "loading") {
+    return (
+      <div className="flex h-screen items-center justify-center text-muted-foreground">
+        {t("portal.common.loading")}
+      </div>
+    );
+  }
+  if (status === "anonymous" || status === "error") {
+    return <AuthScreens onSignedIn={reload} />;
+  }
+  return <Portal />;
+}
+
+export default function App() {
   return (
     <LocaleProvider>
       <ToastProvider>
-        <AppShell
-          variant="light"
-          brand={{ title: APP_NAME, subtitle: "Vendor Portal" }}
-          groups={NAV}
-          activeKey={active}
-          onNavigate={setActive}
-          user={{ name: "Budi Santoso", role: "Vendor Owner" }}
-          title={TITLES[active] ?? APP_NAME}
-          headerRight={<LocaleSwitch />}
-        >
-          {showGallery ? (
-            <Gallery />
-          ) : SOON_KEYS.has(active) ? (
-            <ComingSoon title={title} />
-          ) : (
-            <Placeholder title={title} />
-          )}
-        </AppShell>
+        <CapabilitiesProvider load={loadCapabilities}>
+          <Root />
+        </CapabilitiesProvider>
       </ToastProvider>
     </LocaleProvider>
   );
