@@ -109,6 +109,19 @@ export type VendorDTO = {
 export type SubmitOutcome = "submitted" | "tax_conflict";
 
 /**
+ * One mandatory document the vendor must supply, as the portal doc section renders it. Portal-scoped
+ * (gated `vendors:view` + ownership) because the vendor role can't read the `document_master` module —
+ * so the required set + its bilingual labels are surfaced here rather than from the console masters.
+ */
+export type RequiredDocumentDTO = {
+  readonly documentMasterId: string;
+  readonly no: string;
+  readonly nameId: string;
+  readonly nameEn: string;
+  readonly captured: boolean;
+};
+
+/**
  * The data-access seam behind the router — every DB touch, so the surface is testable without Postgres.
  * The membership lookups (`owns`/existence) live in {@link VendorMembershipStore}; this store owns the
  * vendor row + the submit assembly (banks, required doc set, captured slots) + the guarded transition.
@@ -133,6 +146,8 @@ export type VendorStore = {
     requiredDocMasterIds: string[];
     capturedDocuments: CapturedDocument[];
   }>;
+  /** The mandatory documents this vendor must supply (origin∪category), each flagged captured-or-not. */
+  readonly requiredDocuments: (vendor: VendorDTO) => Promise<RequiredDocumentDTO[]>;
   /** Is `taxId` already held by a *non-Draft* vendor other than `exceptVendorId`? (the dedup pre-check). */
   readonly taxIdTaken: (taxId: string, exceptVendorId: string) => Promise<boolean>;
   /** Apply Draft→Pending + audit atomically; reports the tax-id conflict rather than throwing a 500. */
@@ -341,6 +356,62 @@ export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
     return { banks, requiredDocMasterIds, capturedDocuments };
   },
 
+  requiredDocuments: async (vendor) => {
+    const masterRows = await dbHandle
+      .select({
+        id: documentMaster.id,
+        no: documentMaster.no,
+        nameId: documentMaster.nameId,
+        nameEn: documentMaster.nameEn,
+        appliesTo: documentMaster.appliesTo,
+        mandatory: documentMaster.mandatory,
+        enabled: documentMaster.enabled,
+      })
+      .from(documentMaster);
+    const requirementRows = await dbHandle
+      .select({
+        categoryId: categoryDocumentRequirements.categoryId,
+        documentMasterId: categoryDocumentRequirements.documentMasterId,
+        mandatory: categoryDocumentRequirements.mandatory,
+        active: categoryDocumentRequirements.active,
+        enabled: documentMaster.enabled,
+      })
+      .from(categoryDocumentRequirements)
+      .innerJoin(
+        documentMaster,
+        eq(categoryDocumentRequirements.documentMasterId, documentMaster.id),
+      );
+    const requiredIds = requiredDocumentSet(
+      { origin: vendor.origin, categoryId: vendor.categoryId },
+      { master: masterRows, categoryRequirements: requirementRows },
+    );
+    const byId = new Map(masterRows.map((m) => [m.id, m]));
+    const slotRows = await dbHandle
+      .select({
+        documentMasterId: documentSlots.documentMasterId,
+        currentVersionId: documentSlots.currentVersionId,
+      })
+      .from(documentSlots)
+      .where(eq(documentSlots.vendorId, vendor.id));
+    const captured = new Set(
+      slotRows.filter((s) => s.currentVersionId !== null).map((s) => s.documentMasterId),
+    );
+    return requiredIds.flatMap((id) => {
+      const m = byId.get(id);
+      return m
+        ? [
+            {
+              documentMasterId: id,
+              no: m.no,
+              nameId: m.nameId,
+              nameEn: m.nameEn,
+              captured: captured.has(id),
+            },
+          ]
+        : [];
+    });
+  },
+
   taxIdTaken: async (taxId, exceptVendorId) => {
     const rows = await dbHandle
       .select({ id: vendors.id })
@@ -432,6 +503,19 @@ export const vendorRoutes = (
     const item = await store.getById(c.req.param("vendorId"));
     return item ? c.json({ item }) : sendError(c, notFoundError());
   });
+
+  // The mandatory documents this vendor must supply — portal-scoped so the doc section can render its
+  // cards without the `document_master` grant the console has (and the portal owner lacks).
+  app.get(
+    "/vendors/:vendorId/required-documents",
+    requirePermission(MODULE, "view"),
+    ownership,
+    async (c) => {
+      const vendor = await store.getById(c.req.param("vendorId"));
+      if (!vendor) return sendError(c, notFoundError());
+      return c.json({ items: await store.requiredDocuments(vendor) });
+    },
+  );
 
   app.put("/vendors/:vendorId", requirePermission(MODULE, "edit"), ownership, async (c) => {
     const current = await store.getById(c.req.param("vendorId"));
