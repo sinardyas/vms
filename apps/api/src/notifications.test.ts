@@ -58,13 +58,15 @@ const decisionFor = (to: string): NotifyRequest<"decision"> => ({
   },
 });
 
-describe("notify — channel policy by audience (ADR-0012)", () => {
-  test("a vendor gets email only, and no in-app row", async () => {
+describe("notify — channel policy by audience (ADR-0016, superseding ADR-0012)", () => {
+  test("a vendor gets an in-app row as well as the email", async () => {
     const { deps, inApp, emails } = harness(vendor);
     const outcome = await notify(decisionFor(vendor.userId), deps);
-    expect(outcome).toEqual({ delivered: ["email"], failed: [] });
+    // Was email-only under ADR-0012. The row is what survives a lost inbox, and it's what fills the
+    // portal bell (M6.3) — dispatch didn't change, the policy did.
+    expect(outcome).toEqual({ delivered: ["in_app", "email"], failed: [] });
     expect(emails).toHaveLength(1);
-    expect(inApp).toHaveLength(0);
+    expect(inApp).toHaveLength(1);
   });
 
   test("an internal user gets both an in-app row and an email", async () => {
@@ -151,8 +153,10 @@ describe("notify — validation", () => {
 describe("notify — failures never reach the caller", () => {
   test("an SMTP failure is reported, not thrown — the state change already committed", async () => {
     const { deps } = harness(vendor, { email: true });
+    // The assertion is really that this line resolves at all: a throw would 500 a request whose work
+    // had already committed, leaving the caller unable to tell a failed delivery from a failed change.
     const outcome = await notify(decisionFor(vendor.userId), deps);
-    expect(outcome).toEqual({ delivered: [], failed: ["email"] });
+    expect(outcome).toEqual({ delivered: ["in_app"], failed: ["email"] });
   });
 
   test("channels are independent — a dead SMTP host still leaves the in-app row", async () => {

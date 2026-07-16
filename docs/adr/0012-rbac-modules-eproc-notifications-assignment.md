@@ -33,6 +33,11 @@ Email verification; **approval decision → vendor** (approve/activate & reject-
 **document rejected → vendor**; **step assigned → approver** (+ office **invite email on HOD activation**).
 Channel default: vendors → **email**; internal users → **in-app + email**. Content localized (ADR-0008).
 
+> **Superseded by [ADR-0016](0016-vendor-in-app-notifications.md) (2026-07-17):** the channel default is
+> now **in-app + email for every audience**. "Vendors → email" meant no in-app row was ever written for
+> a vendor, leaving them with only the most perishable channel and no durable record to return to.
+> The event catalogue and the localization rule above are unchanged.
+
 ### Initial assignment — auto to role lead, then delegate
 Each **Role** designates a **lead user**. When a step opens, it auto-assigns to that role's lead, who keeps
 or **delegates/reassigns** to an eligible decider. SoD still governs *deciding*: if the lead is

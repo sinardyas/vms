@@ -1351,6 +1351,61 @@ export const catalogue = {
   // noun rather than ship a notification with a hole where the name should be.
   "notify.fallback.document": { id: "dokumen tersebut", en: "the document" },
   "notify.fallback.role": { id: "persetujuan", en: "approval" },
+
+  // --- Notification centre (M6.3, #79, ADR-0016) — the bell's own chrome ---
+  // The feed itself renders from each row's stored keys; these are the frame around it.
+  "notify.centre.title": { id: "Notifikasi", en: "Notifications" },
+  "notify.centre.open": { id: "Buka notifikasi", en: "Open notifications" },
+  "notify.centre.empty": { id: "Belum ada notifikasi.", en: "No notifications yet." },
+  "notify.centre.emptyUnread": {
+    id: "Tidak ada notifikasi yang belum dibaca.",
+    en: "Nothing unread.",
+  },
+  "notify.centre.markAllRead": { id: "Tandai semua dibaca", en: "Mark all as read" },
+  "notify.centre.markRead": { id: "Tandai dibaca", en: "Mark as read" },
+  "notify.centre.unreadOnly": { id: "Belum dibaca saja", en: "Unread only" },
+  "notify.centre.showAll": { id: "Tampilkan semua", en: "Show all" },
+  "notify.centre.loading": { id: "Memuat…", en: "Loading…" },
+  "notify.centre.error": { id: "Notifikasi gagal dimuat.", en: "Notifications failed to load." },
+  "notify.centre.retry": { id: "Coba lagi", en: "Retry" },
+  "notify.centre.viewMore": { id: "Muat lebih banyak", en: "Load more" },
+  // Screen-reader text for the badge; `{count}` is the unread total.
+  "notify.centre.unreadCount": {
+    id: "{count} notifikasi belum dibaca",
+    en: "{count} unread notifications",
+  },
+  // Relative timestamps — the feed shows "2h ago", not an absolute date (see `relativeTime`).
+  "notify.time.now": { id: "Baru saja", en: "Just now" },
+  "notify.time.minutes": { id: "{count} mnt lalu", en: "{count}m ago" },
+  "notify.time.hours": { id: "{count} jam lalu", en: "{count}h ago" },
+  "notify.time.days": { id: "{count} hr lalu", en: "{count}d ago" },
+  // A row whose stored key no longer exists in the catalogue (renamed/dropped since it was written).
+  // Degrading one row beats throwing the whole feed — see `renderRow` in `notifications-route.ts`.
+  "notify.unavailable": {
+    id: "Notifikasi ini tidak dapat ditampilkan.",
+    en: "This notification can't be displayed.",
+  },
+
+  // --- Portal status view — the vendor's decision / document notices (M6.3, ADR-0016) ---
+  // Read from the *record*, never the notifications store: a notification says what happened, this
+  // says what is true now.
+  "portal.status.rejectedTitle": { id: "Pendaftaran ditolak", en: "Registration rejected" },
+  "portal.status.rejectedBody": {
+    id: "Pendaftaran Anda dikembalikan ke Draft. Perbaiki hal berikut lalu kirim ulang.",
+    en: "Your registration was returned to Draft. Address the following, then resubmit.",
+  },
+  "portal.status.reasonLabel": { id: "Alasan", en: "Reason" },
+  "portal.status.decidedBy": { id: "oleh {name}", en: "by {name}" },
+  // (`portal.status.docsTitle` already exists above — the status view's document section reuses it.)
+  "portal.status.docRejected": { id: "Dokumen ditolak", en: "Document rejected" },
+  "portal.status.docsAllVerified": {
+    id: "Semua dokumen wajib telah diverifikasi.",
+    en: "All mandatory documents are verified.",
+  },
+  "portal.status.noNotices": {
+    id: "Tidak ada tindakan yang diperlukan saat ini.",
+    en: "Nothing needs your attention right now.",
+  },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */

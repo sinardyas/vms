@@ -12,6 +12,17 @@ import { type MessageKey, catalogue } from "./keys";
 /** Interpolation params for `{token}` placeholders in a message template. */
 export type MessageParams = Readonly<Record<string, string | number>>;
 
+/**
+ * Whether `key` is a real catalogue key — the runtime counterpart of the compile-time
+ * {@link MessageKey} check.
+ *
+ * Needed where a key arrives as plain data rather than a literal, which in practice means keys read
+ * back out of the database: an in-app notification row persists its `titleKey`/`bodyKey` (M6.1), so a
+ * key that is renamed or dropped from the catalogue leaves already-written rows pointing at nothing.
+ * `translate` would throw on those; callers guard with this and degrade the one row instead.
+ */
+export const isMessageKey = (key: string): key is MessageKey => key in catalogue;
+
 /** Replace `{name}` tokens with params; unmatched tokens are left intact. */
 const interpolate = (template: string, params?: MessageParams): string => {
   if (!params) return template;
