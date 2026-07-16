@@ -20,6 +20,7 @@ import {
   IdentificationCard,
   MagnifyingGlass,
   Plus,
+  Warning,
 } from "@phosphor-icons/react";
 import {
   COMPANY_SCALES,
@@ -68,6 +69,7 @@ import {
   vendorStatusTone,
 } from "@vms/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ChangeRequestDTO, changesApi } from "../lib/approvals";
 import {
   type AuditRowDTO,
   type BankDTO,
@@ -462,8 +464,9 @@ function VendorProfile({ vendorId, onBack }: { vendorId: string; onBack: () => v
   const [vendor, setVendor] = useState<VendorDTO | null>(null);
   const [error, setError] = useState(false);
   const canAudit = can("audit", "view");
+  const canEdit = can("vendors", "edit");
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     let alive = true;
     setVendor(null);
     setError(false);
@@ -479,6 +482,8 @@ function VendorProfile({ vendorId, onBack }: { vendorId: string; onBack: () => v
       alive = false;
     };
   }, [locale, vendorId]);
+
+  useEffect(() => reload(), [reload]);
 
   const back = (
     <Button variant="ghost" size="sm" className="self-start" onClick={onBack}>
@@ -537,6 +542,10 @@ function VendorProfile({ vendorId, onBack }: { vendorId: string; onBack: () => v
         </CardContent>
       </Card>
 
+      {vendor.changePending && (
+        <PendingChangeBanner vendorId={vendorId} canEdit={canEdit} onCancelled={reload} />
+      )}
+
       <Tabs defaultValue="details">
         <TabsList>
           <TabsTrigger value="details">
@@ -575,6 +584,75 @@ function VendorProfile({ vendorId, onBack }: { vendorId: string; onBack: () => v
         )}
       </Tabs>
     </div>
+  );
+}
+
+/**
+ * Post-activation change banner (M4.6/M4.5, #61/#60). An Active vendor with a `change_pending` flag has
+ * an edit in flight; this reads `GET …/change-requests/current` and surfaces the kind + an "under review"
+ * note, and (for `vendors:edit` holders) lets the submitter withdraw it pre-decision — the approver side
+ * lives in the Approvals queue. Only mounted when `vendor.changePending` is set, so no extra fetch runs
+ * for the common no-change case.
+ */
+function PendingChangeBanner({
+  vendorId,
+  canEdit,
+  onCancelled,
+}: { vendorId: string; canEdit: boolean; onCancelled: () => void }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const { toast } = useToast();
+  const [change, setChange] = useState<ChangeRequestDTO | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    changesApi
+      .current(locale, vendorId)
+      .then((c) => alive && setChange(c))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [locale, vendorId]);
+
+  if (!change) return null;
+
+  const cancel = async () => {
+    setBusy(true);
+    try {
+      await changesApi.cancel(locale, vendorId);
+      toast({ title: t("console.vendorProfile.changeCancelled"), tone: "success" });
+      onCancelled();
+    } catch (e) {
+      const msg =
+        e instanceof VendorApiError ? e.message : t("console.vendorProfile.changeCancelError");
+      toast({ title: msg, tone: "danger" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="border-warning/40 bg-warning/5">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2">
+            <Warning weight="fill" className="text-warning-foreground" />
+            <span className="font-semibold">{t("console.vendorProfile.changePending")}</span>
+            <Badge tone="navy">{t(`enum.approvalTrigger.${change.trigger}` as MessageKey)}</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t("console.vendorProfile.changePendingBody")}
+          </p>
+        </div>
+        {canEdit && (
+          <Button variant="secondary" size="sm" disabled={busy} onClick={() => void cancel()}>
+            {t("console.vendorProfile.changeCancel")}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
