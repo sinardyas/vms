@@ -64,6 +64,7 @@ import {
 } from "@vms/domain";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { type Context, Hono } from "hono";
+import { openRegistrationRequest } from "./approval-engine";
 import { writeAudit } from "./audit";
 import type { AppEnv } from "./context";
 import { sendError } from "./http-error";
@@ -499,6 +500,17 @@ export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
         module: MODULE,
         subjectType: "vendor",
         subjectId: vendorId,
+      });
+      // Open the approval request that drives this submission through its route (M4.2, ADR-0005), in the
+      // same transaction as the transition — a vendor can't reach Pending without its workflow, and a
+      // failure here rolls the transition back. The trigger follows the target queue (ADR-0009): office
+      // → the HOD route (`pending_hod`), self → the standard AP route (`pending`).
+      const trigger =
+        targetStatus === "pending_hod" ? "office_vendor_registration" : "new_vendor_registration";
+      await openRegistrationRequest(tx, ctx, {
+        vendorId,
+        trigger,
+        submitterUserId: ctx.actor?.userId ?? null,
       });
       return "submitted";
     }),

@@ -20,6 +20,9 @@ export * from "./values";
 // Access control — request context, actor identity, RBAC `can()` + capability contract (M0.4)
 export * from "./access";
 
+// Approval workflow engine — the pure decision core the M4 routing engine runs on (M4.2)
+export * from "./approval";
+
 // Master-data framework — bilingual labels + referential-integrity contract (M2.1)
 export * from "./master";
 
