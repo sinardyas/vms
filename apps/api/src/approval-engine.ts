@@ -75,9 +75,29 @@ export type OpenRequestInput = {
 };
 
 /**
+ * The step-1 auto-assignment an open produced, handed back so the caller can notify the approver
+ * **after its transaction commits** (M6.2, ADR-0012).
+ *
+ * Why the caller and not this function: opening runs *inside* someone else's transaction (that's the
+ * whole point — the request can't exist without the transition that raised it). A notification sent
+ * from in here would be sent from inside a transaction that might still roll back, and email cannot
+ * be recalled. So the opener reports who it assigned, and whoever owns the commit does the telling.
+ *
+ * `assigneeUserId` is `null` when the step-1 role has no configured lead — the step opens unassigned
+ * and is picked up from the M4.6 Role Queue. There's simply no one to notify.
+ */
+export type StepAssignment = {
+  readonly assigneeUserId: string | null;
+  /** The step's role, bilingual — rendered into the *recipient's* language by the notifier. */
+  readonly roleNameId: string | null;
+  readonly roleNameEn: string | null;
+};
+
+/**
  * Open an ApprovalRequest for `input` inside the transaction `tx`: resolve the active route for the
  * trigger, insert the request (with the edit diff on `payload`, if any) + its ordered steps, assign step 1
- * to its role's lead, and audit the opening. Returns the new request id.
+ * to its role's lead, and audit the opening. Returns the new request id and — for the caller to notify
+ * once it has committed — the step-1 {@link StepAssignment}.
  *
  * Throws if no active route (or no steps) is configured for the trigger — a seeding/config invariant
  * (the M2.4 seed guarantees one route per trigger), so it rolls the caller's transaction back rather than
@@ -87,7 +107,7 @@ export const openApprovalRequest = async (
   tx: Tx,
   ctx: RequestContext,
   input: OpenRequestInput,
-): Promise<{ requestId: string }> => {
+): Promise<{ requestId: string; assignment: StepAssignment }> => {
   const [route] = await tx
     .select({ id: approvalRoutes.id })
     .from(approvalRoutes)
@@ -103,6 +123,8 @@ export const openApprovalRequest = async (
       stepNo: approvalRouteSteps.stepNo,
       roleId: approvalRouteSteps.roleId,
       leadUserId: roles.leadUserId,
+      roleNameId: roles.nameId,
+      roleNameEn: roles.nameEn,
     })
     .from(approvalRouteSteps)
     .innerJoin(roles, eq(roles.id, approvalRouteSteps.roleId))
@@ -164,5 +186,15 @@ export const openApprovalRequest = async (
     subjectId: request.id,
   });
 
-  return { requestId: request.id };
+  // Keyed on `stepNo === 1`, the same predicate the insert above assigns on — not `[0]`, so the two
+  // can't disagree about which step opened if a route is ever ordered from something other than 1.
+  const step1 = routeSteps.find((s) => s.stepNo === 1);
+  return {
+    requestId: request.id,
+    assignment: {
+      assigneeUserId: step1?.leadUserId ?? null,
+      roleNameId: step1?.roleNameId ?? null,
+      roleNameEn: step1?.roleNameEn ?? null,
+    },
+  };
 };

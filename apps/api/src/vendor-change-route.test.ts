@@ -44,6 +44,7 @@ const json = (method: string, body: unknown): RequestInit => ({
 /** A foreign, Active vendor whose country is Indonesia — the subject of an edit. */
 const activeVendor: VendorChangeRef = {
   id: VENDOR,
+  name: "PT Contoh Jaya",
   status: "active",
   origin: "foreign",
   countryId: ID_COUNTRY,
@@ -95,7 +96,13 @@ const fakeStore = (
       overrides.create ??
       (async (_ctx, _v, change): Promise<CreateChangeOutcome> => {
         calls.push(`create:${change.kind}`);
-        return { ok: true, requestId: REQUEST };
+        // No lead on step 1 → the route's `step_assigned` notification has nobody to address and
+        // does nothing, keeping this DB-free test off the notification path.
+        return {
+          ok: true,
+          requestId: REQUEST,
+          assignment: { assigneeUserId: null, roleNameId: null, roleNameEn: null },
+        };
       }),
     current: overrides.current ?? (async () => changeDTO),
     cancel:

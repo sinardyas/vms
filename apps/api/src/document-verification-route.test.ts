@@ -14,6 +14,7 @@ import { Hono } from "hono";
 import { type AppEnv, requestContext } from "./context";
 import {
   type DecideFailure,
+  type DecidedSubject,
   type DocumentVerificationStore,
   type VerificationNotifier,
   type VerifiedVersionDTO,
@@ -58,6 +59,14 @@ type Spy = {
   rejectCalls: { versionId: string; reason: string; verifier?: string }[];
 };
 
+/** The vendor + document a decision was about — what a rejection notice is built from (M6.2). */
+const subject: DecidedSubject = {
+  vendorId: VENDOR,
+  vendorName: "PT Contoh Jaya",
+  documentNameId: "Akta Pendirian",
+  documentNameEn: "Deed of Establishment",
+};
+
 const fakeStore = (
   overrides: Partial<DocumentVerificationStore> = {},
 ): DocumentVerificationStore & { spy: Spy } => {
@@ -86,11 +95,15 @@ const fakeStore = (
     },
     verify: async (ctx, versionId, dates, verifier) => {
       spy.verifyCalls.push({ versionId, dates, verifier });
-      return { ok: true, item: decided };
+      return { ok: true, item: decided, subject };
     },
     reject: async (ctx, versionId, reason, verifier) => {
       spy.rejectCalls.push({ versionId, reason, verifier });
-      return { ok: true, item: { ...decided, verifyStatus: "rejected", rejectReason: reason } };
+      return {
+        ok: true,
+        item: { ...decided, verifyStatus: "rejected", rejectReason: reason },
+        subject,
+      };
     },
     versionObjectKey: async () => "document-versions/abc",
     ...overrides,
@@ -100,7 +113,10 @@ const fakeStore = (
 const mount = (
   a: () => Actor | null,
   store: DocumentVerificationStore,
-  notify?: VerificationNotifier,
+  // Defaults to a no-op, like `store`/`storage` default to fakes here: the router's real default is
+  // the live notifier, which would reach for Postgres to find the vendor's owner. These tests are
+  // DB-free by construction, so a test that cares about dispatch injects a spy and says so.
+  notify: VerificationNotifier = () => {},
 ) => {
   const storage = { presignGet: async (k: string) => `https://minio.local/${k}?sig=x` };
   const app = new Hono<AppEnv>();
@@ -236,25 +252,40 @@ describe("POST reject", () => {
 });
 
 // M5.3 (#70): rejecting a **mandatory** doc returns the registration to Draft (the store's bounce, tested
-// live vs Postgres); the route's job is to surface that on the response and fire the notify seam. An
-// optional-doc reject does neither. (The DB bounce itself is store-level — exercised end-to-end live.)
-describe("POST reject — M5.3 return-to-draft + notify seam", () => {
+// live vs Postgres); the route surfaces that on the response and fires the notify seam.
+//
+// M6.2 (#78) widened the seam: it now fires on **every** rejection, mandatory or not, with
+// `returnedToDraft` telling the templates which copy to use rather than deciding whether the vendor
+// hears anything at all. The optional case previously asserted silence — that was the M5.3 seam having
+// nothing to say, not a decision that an optional rejection is unworthy of an email.
+describe("POST reject — M5.3 return-to-draft + M6.2 notify seam", () => {
+  type Fired = { versionId: string; reason: string; vendorId: string; returnedToDraft: boolean };
+  const spyNotifier =
+    (fired: Fired[]): VerificationNotifier =>
+    (e) => {
+      fired.push({
+        versionId: e.versionId,
+        reason: e.reason,
+        vendorId: e.subject.vendorId,
+        returnedToDraft: e.returnedToDraft,
+      });
+    };
+
   const bounced = (): Partial<DocumentVerificationStore> => ({
     reject: async (_ctx, versionId, reason) => ({
       ok: true,
       item: { ...decided, verifyStatus: "rejected", rejectReason: reason, id: versionId },
+      subject,
       returnedToDraft: { vendorId: VENDOR },
     }),
   });
 
-  test("mandatory-doc reject → response flags returnedToDraft + fires notify", async () => {
-    const notified: { vendorId: string; versionId: string; reason: string }[] = [];
+  test("mandatory-doc reject → response flags returnedToDraft + notifies with the bounce", async () => {
+    const fired: Fired[] = [];
     const res = await mount(
       () => actor(["approve"]),
       fakeStore(bounced()),
-      (e) => {
-        notified.push({ vendorId: e.vendorId, versionId: e.versionId, reason: e.reason });
-      },
+      spyNotifier(fired),
     ).request(
       `/console/document-verification/versions/${VERSION}/reject`,
       json("POST", { reason: "expired certificate" }),
@@ -262,27 +293,40 @@ describe("POST reject — M5.3 return-to-draft + notify seam", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { returnedToDraft: boolean };
     expect(body.returnedToDraft).toBe(true);
-    expect(notified).toEqual([
-      { vendorId: VENDOR, versionId: VERSION, reason: "expired certificate" },
+    expect(fired).toEqual([
+      {
+        versionId: VERSION,
+        reason: "expired certificate",
+        vendorId: VENDOR,
+        returnedToDraft: true,
+      },
     ]);
   });
 
-  test("optional-doc reject → returnedToDraft false + notify NOT fired", async () => {
-    let notifyCount = 0;
-    const res = await mount(
-      () => actor(["approve"]),
-      fakeStore(),
-      () => {
-        notifyCount += 1;
-      },
-    ).request(
+  test("optional-doc reject → notifies too, but flagged as no bounce (M6.2)", async () => {
+    const fired: Fired[] = [];
+    const res = await mount(() => actor(["approve"]), fakeStore(), spyNotifier(fired)).request(
       `/console/document-verification/versions/${VERSION}/reject`,
       json("POST", { reason: "blurry scan" }),
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { returnedToDraft: boolean };
     expect(body.returnedToDraft).toBe(false);
-    expect(notifyCount).toBe(0);
+    // Fired — the vendor is owed the reason — but flagged false, so the copy can't claim the
+    // registration moved when it didn't.
+    expect(fired).toEqual([
+      { versionId: VERSION, reason: "blurry scan", vendorId: VENDOR, returnedToDraft: false },
+    ]);
+  });
+
+  test("a verify never notifies — only a rejection is news the vendor must act on", async () => {
+    const fired: Fired[] = [];
+    const res = await mount(() => actor(["approve"]), fakeStore(), spyNotifier(fired)).request(
+      `/console/document-verification/versions/${VERSION}/verify`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(200);
+    expect(fired).toEqual([]);
   });
 });
 

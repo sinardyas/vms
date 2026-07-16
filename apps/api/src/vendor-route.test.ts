@@ -138,7 +138,9 @@ const fakeStore = (
     submit: async (_ctx, id, targetStatus) => {
       calls.push(`submit:${id}`);
       submitTargets.push(targetStatus);
-      return "submitted";
+      // No lead on step 1 — the route's `step_assigned` notification then has no one to address and
+      // does nothing, which keeps these tests off the notification path entirely.
+      return { ok: true, assignment: { assigneeUserId: null, roleNameId: null, roleNameEn: null } };
     },
     recall: async (_ctx, id) => {
       calls.push(`recall:${id}`);
@@ -387,7 +389,7 @@ describe("POST /vendors/:id/submit — the gate", () => {
   });
 
   test("409 changePending when the vendor already carries an open request (one-pending lock)", async () => {
-    const store = fakeStore({ submit: async () => "change_pending" });
+    const store = fakeStore({ submit: async () => ({ ok: false, reason: "change_pending" }) });
     const res = await mount(() => actor("vendor", ["edit"]), store).request(
       `/vendors/${VENDOR}/submit`,
       json("POST", {}),
