@@ -18,6 +18,7 @@ import { registrationListRoutes } from "./registration-lists-route";
 import { sessionActorResolver } from "./session-actor";
 import { requireVendorOwnership } from "./vendor-access";
 import { vendorBanksRoutes } from "./vendor-banks-route";
+import { vendorChangeRoutes } from "./vendor-change-route";
 import { vendorDocumentsRoutes } from "./vendor-documents-route";
 import { vendorRoutes } from "./vendor-route";
 
@@ -106,6 +107,8 @@ app.use("/vendors/:vendorId/banks", vendorOwnership);
 app.use("/vendors/:vendorId/banks/*", vendorOwnership);
 app.use("/vendors/:vendorId/documents", vendorOwnership);
 app.use("/vendors/:vendorId/documents/*", vendorOwnership);
+app.use("/vendors/:vendorId/change-requests", vendorOwnership);
+app.use("/vendors/:vendorId/change-requests/*", vendorOwnership);
 
 // M3.5 (#46): Vendor aggregate root — self-registration capture + submit (account-first, resumable
 // Draft → Pending). `GET /vendors/me` resumes; `POST /vendors` creates a Draft + owner link; PUT saves
@@ -127,5 +130,11 @@ app.route("/vendors", vendorBanksRoutes());
 // shape). Issue/expiry + verify status are the verifier's at M5, so capture never records them. The
 // shared `@vms/domain` doc block + completeness predicate feed M3.4's submit gate.
 app.route("/vendors", vendorDocumentsRoutes());
+
+// M4.5 (#60): Post-activation edits — an Active vendor's bank/non-bank change raised as an approvable
+// diff (ADR-0005), routed by kind (bank → AP Manager, non-bank → AP Supervisor; ADR-0009), guarded by
+// `change_pending`, applied only on final approval (`vendor-change.ts`, run in the approval decide tx).
+// Gated on `vendors`, own-vendor scoped, audited.
+app.route("/vendors", vendorChangeRoutes());
 
 export default { port: env.port, fetch: app.fetch };

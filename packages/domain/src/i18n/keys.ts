@@ -621,6 +621,20 @@ export const catalogue = {
     en: "This vendor already has a change awaiting approval — resolve it first.",
   },
 
+  // --- Post-activation edits (M4.5, #60, ADR-0005/0009) ---
+  // A change request was raised on a vendor that isn't Active — only an Active vendor's edits re-approve
+  // (a Draft edits in place; a Pending vendor is frozen under its registration review).
+  "error.vendor.notActive": {
+    id: "Perubahan hanya dapat diajukan untuk vendor yang sudah aktif.",
+    en: "Changes can only be requested for a vendor that is already active.",
+  },
+  // A non-bank change would leave a required profile field empty (the fields are named in `details`).
+  // An Active vendor already met the required set, so an edit may not drop below it.
+  "error.vendor.changeIncomplete": {
+    id: "Perubahan tidak dapat diajukan — sebagian data wajib akan menjadi kosong.",
+    en: "The change can't be submitted — it would leave some required information empty.",
+  },
+
   // --- Portal UI chrome (M3.5, #46) — bilingual labels for the self-registration portal. ---
   "portal.shell.subtitle": { id: "Portal Vendor", en: "Vendor Portal" },
   "portal.nav.dashboard": { id: "Beranda", en: "Dashboard" },
