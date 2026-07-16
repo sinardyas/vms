@@ -955,6 +955,126 @@ export const catalogue = {
   "portal.status.summaryTitle": { id: "Ringkasan pendaftaran", en: "Registration summary" },
   "portal.status.docsTitle": { id: "Dokumen", en: "Documents" },
   "portal.status.banksTitle": { id: "Rekening bank", en: "Bank accounts" },
+
+  // --- Approval step decisions (M4.6, #61) — the per-step outcome badge ---
+  "enum.stepDecision.pending": { id: "Menunggu", en: "Awaiting" },
+  "enum.stepDecision.approved": { id: "Disetujui", en: "Approved" },
+  "enum.stepDecision.rejected": { id: "Ditolak", en: "Rejected" },
+
+  // --- Approval request status (M4.6, #61) — the whole request's resolution ---
+  "enum.approvalStatus.pending": { id: "Menunggu Persetujuan", en: "Pending" },
+  "enum.approvalStatus.approved": { id: "Disetujui", en: "Approved" },
+  "enum.approvalStatus.rejected": { id: "Ditolak", en: "Rejected" },
+  "enum.approvalStatus.recalled": { id: "Ditarik Kembali", en: "Recalled" },
+
+  // --- Console Approvals UX (M4.6, #61) — my/role queue, request detail, decide ---
+  "console.approvals.title": { id: "Persetujuan", en: "Approvals" },
+  "console.approvals.subtitle": {
+    id: "Tinjau dan putuskan permintaan yang menunggu persetujuan Anda.",
+    en: "Review and decide the requests awaiting your approval.",
+  },
+  "console.approvals.refresh": { id: "Muat ulang", en: "Refresh" },
+  "console.approvals.tab.mine": { id: "Antrean Saya", en: "My Queue" },
+  "console.approvals.tab.role": { id: "Antrean Peran", en: "Role Queue" },
+  "console.approvals.tab.all": { id: "Semua Terbuka", en: "All Open" },
+  "console.approvals.col.vendor": { id: "Vendor", en: "Vendor" },
+  "console.approvals.col.type": { id: "Jenis Permintaan", en: "Request Type" },
+  "console.approvals.col.step": { id: "Langkah Saat Ini", en: "Current Step" },
+  "console.approvals.col.assignee": { id: "Ditugaskan Ke", en: "Assignee" },
+  "console.approvals.col.submitted": { id: "Diajukan", en: "Submitted" },
+  "console.approvals.unassigned": { id: "Belum ditugaskan", en: "Unassigned" },
+  "console.approvals.loading": { id: "Memuat…", en: "Loading…" },
+  "console.approvals.loadError": {
+    id: "Gagal memuat antrean persetujuan.",
+    en: "Failed to load the approval queue.",
+  },
+  "console.approvals.empty.mine": {
+    id: "Tidak ada permintaan yang ditugaskan kepada Anda.",
+    en: "No requests are assigned to you.",
+  },
+  "console.approvals.empty.role": {
+    id: "Tidak ada permintaan yang menunggu peran Anda.",
+    en: "No requests are awaiting your role.",
+  },
+  "console.approvals.empty.all": {
+    id: "Tidak ada permintaan terbuka.",
+    en: "No open requests.",
+  },
+  "console.approvals.stepOf": { id: "Langkah {n} dari {total}", en: "Step {n} of {total}" },
+
+  // Request detail
+  "console.approvals.detail.subject": { id: "Subjek", en: "Subject" },
+  "console.approvals.detail.type": { id: "Jenis permintaan", en: "Request type" },
+  "console.approvals.detail.status": { id: "Status", en: "Status" },
+  "console.approvals.detail.raisedAt": { id: "Diajukan pada", en: "Raised at" },
+  "console.approvals.detail.route": { id: "Alur persetujuan", en: "Approval route" },
+  "console.approvals.detail.change": { id: "Perubahan yang diusulkan", en: "Proposed change" },
+  "console.approvals.detail.changeProfile": {
+    id: "Nilai profil baru",
+    en: "New profile values",
+  },
+  "console.approvals.detail.changeBanks": { id: "Rekening bank baru", en: "New bank accounts" },
+  "console.approvals.detail.verification": {
+    id: "Verifikasi dokumen",
+    en: "Document verification",
+  },
+  "console.approvals.detail.verificationSoon": {
+    id: "Kemajuan verifikasi dokumen akan tampil di sini pada M5.",
+    en: "Document-verification progress lands here in M5.",
+  },
+  "console.approvals.step.awaiting": { id: "Menunggu keputusan", en: "Awaiting decision" },
+  "console.approvals.step.by": { id: "oleh {name}", en: "by {name}" },
+  "console.approvals.step.override": { id: "Penggantian Admin", en: "Admin override" },
+  "console.approvals.step.reason": { id: "Alasan: {reason}", en: "Reason: {reason}" },
+  "console.approvals.bank.primary": { id: "Utama", en: "Primary" },
+
+  // Decide actions
+  "console.approvals.action.approve": { id: "Setujui", en: "Approve" },
+  "console.approvals.action.reject": { id: "Tolak", en: "Reject" },
+  "console.approvals.action.reassign": { id: "Tugaskan Ulang", en: "Reassign" },
+  "console.approvals.action.cancel": { id: "Batal", en: "Cancel" },
+  "console.approvals.approve.title": { id: "Setujui langkah ini", en: "Approve this step" },
+  "console.approvals.approve.note": { id: "Catatan (opsional)", en: "Note (optional)" },
+  "console.approvals.approve.confirm": { id: "Setujui", en: "Approve" },
+  "console.approvals.reject.title": { id: "Tolak permintaan ini", en: "Reject this request" },
+  "console.approvals.reject.reason": { id: "Alasan (wajib)", en: "Reason (required)" },
+  "console.approvals.reject.confirm": { id: "Tolak", en: "Reject" },
+  "console.approvals.reassign.title": {
+    id: "Tugaskan ulang / delegasikan langkah",
+    en: "Reassign / delegate step",
+  },
+  "console.approvals.reassign.pick": { id: "Tugaskan ke", en: "Assign to" },
+  "console.approvals.reassign.none": {
+    id: "Tidak ada pengguna yang memenuhi syarat untuk peran ini.",
+    en: "No eligible users hold this role.",
+  },
+  "console.approvals.reassign.confirm": { id: "Tugaskan Ulang", en: "Reassign" },
+  "console.approvals.toast.approved": { id: "Langkah disetujui.", en: "Step approved." },
+  "console.approvals.toast.rejected": { id: "Permintaan ditolak.", en: "Request rejected." },
+  "console.approvals.toast.reassigned": { id: "Langkah ditugaskan ulang.", en: "Step reassigned." },
+  "console.approvals.toast.error": {
+    id: "Tindakan gagal. Coba lagi.",
+    en: "The action failed. Please try again.",
+  },
+
+  // --- Vendor profile: post-activation change banner (M4.6/M4.5, #61/#60) ---
+  "console.vendorProfile.changePending": {
+    id: "Perubahan sedang ditinjau",
+    en: "A change is under review",
+  },
+  "console.vendorProfile.changePendingBody": {
+    id: "Edit vendor ini terkunci hingga perubahan yang diajukan disetujui atau ditolak.",
+    en: "Edits to this vendor are locked until the raised change is approved or rejected.",
+  },
+  "console.vendorProfile.changeCancel": { id: "Batalkan perubahan", en: "Cancel change" },
+  "console.vendorProfile.changeCancelled": {
+    id: "Permintaan perubahan dibatalkan.",
+    en: "Change request cancelled.",
+  },
+  "console.vendorProfile.changeCancelError": {
+    id: "Gagal membatalkan perubahan.",
+    en: "Failed to cancel the change.",
+  },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */

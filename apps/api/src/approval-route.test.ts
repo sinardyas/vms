@@ -47,11 +47,15 @@ const detail: ApprovalRequestDetailDTO = {
   currentStepNo: 1,
   currentStepRoleId: "role-ap-staff",
   currentStepRoleCode: "ap_staff",
+  currentStepRoleNameId: "Staf AP",
+  currentStepRoleNameEn: "AP Staff",
   currentAssigneeUserId: null,
+  currentAssigneeName: null,
   submittedBy: "submitter",
   createdAt: "2026-07-16T00:00:00.000Z",
   routeId: "route-1",
   resolvedAt: null,
+  payload: null,
   steps: [
     {
       stepNo: 1,
@@ -60,8 +64,10 @@ const detail: ApprovalRequestDetailDTO = {
       roleNameId: "Staf AP",
       roleNameEn: "AP Staff",
       assigneeUserId: null,
+      assigneeName: null,
       decision: "pending",
       decidedBy: null,
+      decidedByName: null,
       reason: null,
       decidedAt: null,
       isOverride: false,
@@ -91,7 +97,10 @@ const fakeStore = (overrides: Partial<ApprovalStore> = {}): ApprovalStore & { sp
           currentStepNo: 1,
           currentStepRoleId: "role-ap-staff",
           currentStepRoleCode: "ap_staff",
+          currentStepRoleNameId: "Staf AP",
+          currentStepRoleNameEn: "AP Staff",
           currentAssigneeUserId: null,
+          currentAssigneeName: null,
           submittedBy: "submitter",
           createdAt: "2026-07-16T00:00:00.000Z",
         },
@@ -110,6 +119,8 @@ const fakeStore = (overrides: Partial<ApprovalStore> = {}): ApprovalStore & { sp
       spy.reassignCalls.push(input);
       return { ok: true, detail };
     },
+    rolesForUser: async () => ["role-ap-staff", "role-ap-supervisor"],
+    candidatesForStep: async () => [{ userId: ASSIGNEE, name: "Budi", email: "budi@soechi.id" }],
     ...overrides,
   };
 };
@@ -160,7 +171,54 @@ describe("GET / — queue", () => {
   test("no filters → open queue, unscoped", async () => {
     const store = fakeStore();
     await mount(() => actor(["view"]), store).request("/console/approvals");
-    expect(store.spy.listFilters).toEqual([{ vendorId: undefined, assigneeUserId: undefined }]);
+    expect(store.spy.listFilters).toEqual([
+      { vendorId: undefined, assigneeUserId: undefined, roleIds: undefined },
+    ]);
+  });
+
+  test("?role scopes the filter to the caller's role ids", async () => {
+    const store = fakeStore();
+    await mount(() => actor(["view"]), store).request("/console/approvals?role=1");
+    expect(store.spy.listFilters).toEqual([
+      {
+        vendorId: undefined,
+        assigneeUserId: undefined,
+        roleIds: ["role-ap-staff", "role-ap-supervisor"],
+      },
+    ]);
+  });
+
+  test("?role with a role-less caller → empty role set (empty queue)", async () => {
+    const store = fakeStore({ rolesForUser: async () => [] });
+    await mount(() => actor(["view"]), store).request("/console/approvals?role=1");
+    expect(store.spy.listFilters).toEqual([
+      { vendorId: undefined, assigneeUserId: undefined, roleIds: [] },
+    ]);
+  });
+});
+
+describe("GET /:id/steps/:stepNo/candidates", () => {
+  test("lists the step's candidate assignees", async () => {
+    const res = await mount(() => actor(["approve"]), fakeStore()).request(
+      `/console/approvals/${REQ}/steps/1/candidates`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { userId: string }[] };
+    expect(body.items.map((i) => i.userId)).toEqual([ASSIGNEE]);
+  });
+
+  test("requires approvals:approve (a viewer → 403)", async () => {
+    const res = await mount(() => actor(["view"]), fakeStore()).request(
+      `/console/approvals/${REQ}/steps/1/candidates`,
+    );
+    expect(res.status).toBe(403);
+  });
+
+  test("non-integer step → 400", async () => {
+    const res = await mount(() => actor(["approve"]), fakeStore()).request(
+      `/console/approvals/${REQ}/steps/x/candidates`,
+    );
+    expect(res.status).toBe(400);
   });
 });
 
