@@ -68,6 +68,7 @@ import {
   useT,
   useToast,
   vendorStatusTone,
+  verifyStatusTone,
 } from "@vms/ui";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { type ChangeRequestDTO, changesApi } from "../lib/approvals";
@@ -1185,11 +1186,17 @@ function DocumentsTab({ vendorId }: { vendorId: string }) {
                     <span className="font-semibold text-foreground">
                       {resolveLabel({ id: d.nameId, en: d.nameEn }, locale)}
                     </span>
-                    <StatusPill tone={d.captured ? "success" : "pending"}>
-                      {d.captured
-                        ? t("console.vendorProfile.docCaptured")
-                        : t("console.vendorProfile.docMissing")}
-                    </StatusPill>
+                    {version ? (
+                      // The verifier's decision on the captured version (M5.4): pending / verified /
+                      // rejected — the gate status the M5.2 activation gate reads, on the vendor detail.
+                      <StatusPill tone={verifyStatusTone[version.verifyStatus]}>
+                        {t(`enum.verifyStatus.${version.verifyStatus}` as MessageKey)}
+                      </StatusPill>
+                    ) : (
+                      <StatusPill tone="pending">
+                        {t("console.vendorProfile.docMissing")}
+                      </StatusPill>
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {d.no}
@@ -1199,6 +1206,16 @@ function DocumentsTab({ vendorId }: { vendorId: string }) {
                         }`
                       : ""}
                   </div>
+                  {version?.expiresOn && (
+                    <div className="text-xs text-muted-foreground">
+                      {t("console.vendorProfile.docExpires", { date: version.expiresOn })}
+                    </div>
+                  )}
+                  {version?.verifyStatus === "rejected" && version.rejectReason && (
+                    <div className="text-xs text-destructive">
+                      {t("console.vendorProfile.docRejectReason", { reason: version.rejectReason })}
+                    </div>
+                  )}
                 </div>
               </div>
               {version && (

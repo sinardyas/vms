@@ -256,6 +256,13 @@ export type DocumentVersionDTO = {
   fileId: string;
   refNo: string | null;
   variant: string | null;
+  // The verifier's decision on this version (M5.1/M5.4): `pending` until decided, then `verified` /
+  // `rejected`. `issuedOn`/`expiresOn` are the certificate dates entered at verification; `rejectReason`
+  // carries the verifier's note on a rejection.
+  verifyStatus: "pending" | "verified" | "rejected";
+  issuedOn: string | null;
+  expiresOn: string | null;
+  rejectReason: string | null;
 };
 
 export type DocumentSlotDTO = {

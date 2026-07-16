@@ -50,6 +50,7 @@ import {
 } from "@vms/ui";
 import { useCallback, useEffect, useState } from "react";
 import {
+  type ActivationGateDTO,
   type ApprovalRequestDetailDTO,
   type ApprovalRequestSummaryDTO,
   type ApprovalStepDTO,
@@ -330,15 +331,8 @@ function RequestDetailDialog({
               </ol>
             </section>
 
-            {/* M5 verification-progress placeholder */}
-            <section className="space-y-1 rounded-xl border border-dashed border-border p-3">
-              <h3 className="text-sm font-semibold text-muted-foreground">
-                {t("console.approvals.detail.verification")}
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                {t("console.approvals.detail.verificationSoon")}
-              </p>
-            </section>
+            {/* M5.2 activation-gate status (registration requests only) */}
+            {detail.activationGate && <VerificationProgress gate={detail.activationGate} />}
 
             {/* Decide actions / forms */}
             {decidable && action === null && (
@@ -476,6 +470,57 @@ function StepRow({ step, isCurrent }: { step: ApprovalStepDTO; isCurrent: boolea
           : t(decisionKey(step.decision))}
       </StatusPill>
     </li>
+  );
+}
+
+/**
+ * The M5.2 activation-gate status on a registration request (M5.4, #71) — "N of M mandatory documents
+ * verified" with a progress bar and, when blocked, how many are still awaiting the verifier. This is what
+ * final-approve is gated on (ADR-0013); it replaces the M4.6 placeholder that stood here.
+ */
+function VerificationProgress({ gate }: { gate: ActivationGateDTO }) {
+  const t = useT();
+  const pct =
+    gate.requiredCount === 0 ? 100 : Math.round((gate.verifiedCount / gate.requiredCount) * 100);
+  return (
+    <section
+      className={`space-y-2 rounded-xl border p-3 ${
+        gate.ok ? "border-success/40 bg-success/5" : "border-warning/40 bg-warning/5"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">{t("console.approvals.detail.verification")}</h3>
+        {gate.requiredCount > 0 && (
+          <StatusPill tone={gate.ok ? "success" : "pending"}>
+            {t("console.approvals.detail.verifiedCount", {
+              n: gate.verifiedCount,
+              total: gate.requiredCount,
+            })}
+          </StatusPill>
+        )}
+      </div>
+      {gate.requiredCount === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {t("console.approvals.detail.verificationNone")}
+        </p>
+      ) : (
+        <>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className={`h-full rounded-full ${gate.ok ? "bg-success" : "bg-warning"}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {gate.ok
+              ? t("console.approvals.detail.verificationComplete")
+              : t("console.approvals.detail.verificationBlocked", {
+                  n: gate.requiredCount - gate.verifiedCount,
+                })}
+          </p>
+        </>
+      )}
+    </section>
   );
 }
 
