@@ -32,6 +32,8 @@ import {
   approvalRequests,
   db as defaultDb,
   roles,
+  userRoles,
+  users,
   vendors,
 } from "@vms/db";
 import {
@@ -44,7 +46,8 @@ import {
   parseWith,
   validationError,
 } from "@vms/domain";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { writeAudit } from "./audit";
@@ -66,8 +69,10 @@ export type ApprovalStepDTO = {
   readonly roleNameId: string;
   readonly roleNameEn: string;
   readonly assigneeUserId: string | null;
+  readonly assigneeName: string | null;
   readonly decision: StepDecision;
   readonly decidedBy: string | null;
+  readonly decidedByName: string | null;
   readonly reason: string | null;
   readonly decidedAt: string | null;
   readonly isOverride: boolean;
@@ -83,7 +88,10 @@ export type ApprovalRequestSummaryDTO = {
   readonly currentStepNo: number;
   readonly currentStepRoleId: string | null;
   readonly currentStepRoleCode: string | null;
+  readonly currentStepRoleNameId: string | null;
+  readonly currentStepRoleNameEn: string | null;
   readonly currentAssigneeUserId: string | null;
+  readonly currentAssigneeName: string | null;
   readonly submittedBy: string | null;
   readonly createdAt: string;
 };
@@ -92,16 +100,31 @@ export type ApprovalRequestSummaryDTO = {
 export type ApprovalRequestDetailDTO = ApprovalRequestSummaryDTO & {
   readonly routeId: string;
   readonly resolvedAt: string | null;
+  /** The proposed diff for a post-activation edit (M4.5); `null` for a registration request. */
+  readonly payload: unknown;
   readonly steps: ApprovalStepDTO[];
+};
+
+/** A user who could take a step — a candidate the delegate/reassign picker offers (holds the step's role). */
+export type AssigneeCandidateDTO = {
+  readonly userId: string;
+  readonly name: string;
+  readonly email: string;
 };
 
 /* ── Store seam ────────────────────────────────────────────────────────────────────────────────── */
 
-/** Which requests to list: open ones, optionally scoped to a vendor or to the caller's own queue. */
+/** Which requests to list: open ones, optionally scoped to a vendor, the caller's queue, or their roles. */
 export type QueueFilter = {
   readonly vendorId?: string;
   /** Restrict to requests whose current open step is assigned to this user ("my queue"). */
   readonly assigneeUserId?: string;
+  /**
+   * Restrict to requests whose current open step's role is one of these ("role queue"). An **empty**
+   * array is meaningful — a caller who holds no roles has an empty role queue — so it's distinct from
+   * `undefined` (no role filter). The route passes the caller's own role ids for `?role=1`.
+   */
+  readonly roleIds?: readonly string[];
 };
 
 /** A decision on a request's current step. `reason` is required for reject (ADR-0005: reject w/ reasons). */
@@ -138,6 +161,13 @@ export type ApprovalStore = {
   readonly getDetail: (requestId: string) => Promise<ApprovalRequestDetailDTO | null>;
   readonly decide: (ctx: RequestContext, input: DecideInput) => Promise<DecideOutcome>;
   readonly reassign: (ctx: RequestContext, input: ReassignInput) => Promise<ReassignOutcome>;
+  /** The active role ids the given user holds — the "role queue" is the union of their steps. */
+  readonly rolesForUser: (userId: string) => Promise<string[]>;
+  /** Active users who hold a step's role — the pool the delegate/reassign picker offers. */
+  readonly candidatesForStep: (
+    requestId: string,
+    stepNo: number,
+  ) => Promise<AssigneeCandidateDTO[]>;
 };
 
 /* ── The real Drizzle store ────────────────────────────────────────────────────────────────────── */
@@ -171,7 +201,11 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
     return row ?? null;
   };
 
-  /** Load a request's steps in order, joined to their roles (with each role's lead for auto-dispatch). */
+  // Aliased so one query can name both the step's assignee and its decider off the shared `users` table.
+  const stepAssignee = alias(users, "step_assignee");
+  const stepDecider = alias(users, "step_decider");
+
+  /** Load a request's steps in order, joined to their roles + the assignee/decider display names. */
   const loadSteps = (handle: ReadHandle, requestId: string) =>
     handle
       .select({
@@ -182,14 +216,18 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         roleNameEn: roles.nameEn,
         leadUserId: roles.leadUserId,
         assigneeUserId: approvalRequestSteps.assigneeUserId,
+        assigneeName: stepAssignee.name,
         decision: approvalRequestSteps.decision,
         decidedBy: approvalRequestSteps.decidedBy,
+        decidedByName: stepDecider.name,
         reason: approvalRequestSteps.reason,
         decidedAt: approvalRequestSteps.decidedAt,
         isOverride: approvalRequestSteps.isOverride,
       })
       .from(approvalRequestSteps)
       .innerJoin(roles, eq(roles.id, approvalRequestSteps.roleId))
+      .leftJoin(stepAssignee, eq(stepAssignee.id, approvalRequestSteps.assigneeUserId))
+      .leftJoin(stepDecider, eq(stepDecider.id, approvalRequestSteps.decidedBy))
       .where(eq(approvalRequestSteps.requestId, requestId))
       .orderBy(asc(approvalRequestSteps.stepNo));
 
@@ -211,11 +249,15 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
       currentStepNo: row.currentStepNo,
       currentStepRoleId: current?.roleId ?? null,
       currentStepRoleCode: current?.roleCode ?? null,
+      currentStepRoleNameId: current?.roleNameId ?? null,
+      currentStepRoleNameEn: current?.roleNameEn ?? null,
       currentAssigneeUserId: current?.assigneeUserId ?? null,
+      currentAssigneeName: current?.assigneeName ?? null,
       submittedBy: row.submittedBy,
       createdAt: row.createdAt.toISOString(),
       routeId: row.routeId,
       resolvedAt: iso(row.resolvedAt),
+      payload: row.payload ?? null,
       steps: steps.map((s) => ({
         stepNo: s.stepNo,
         roleId: s.roleId,
@@ -223,8 +265,10 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         roleNameId: s.roleNameId,
         roleNameEn: s.roleNameEn,
         assigneeUserId: s.assigneeUserId,
+        assigneeName: s.assigneeName,
         decision: s.decision,
         decidedBy: s.decidedBy,
+        decidedByName: s.decidedByName,
         reason: s.reason,
         decidedAt: iso(s.decidedAt),
         isOverride: s.isOverride,
@@ -234,10 +278,17 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
 
   return {
     listOpen: async (filter) => {
+      // An empty role set means "the caller holds no roles" → an empty role queue; short-circuit before
+      // building an `IN ()` predicate (which some drivers reject).
+      if (filter.roleIds && filter.roleIds.length === 0) return [];
       const conds = [eq(approvalRequests.status, "pending")];
       if (filter.vendorId) conds.push(eq(approvalRequests.subjectVendorId, filter.vendorId));
       if (filter.assigneeUserId) {
         conds.push(eq(approvalRequestSteps.assigneeUserId, filter.assigneeUserId));
+      }
+      if (filter.roleIds && filter.roleIds.length > 0) {
+        // The current step's role (the leftJoin below is keyed on stepNo = currentStepNo) ∈ my roles.
+        conds.push(inArray(approvalRequestSteps.roleId, [...filter.roleIds]));
       }
       const rows = await dbHandle
         .select({
@@ -251,7 +302,10 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
           createdAt: approvalRequests.createdAt,
           currentStepRoleId: approvalRequestSteps.roleId,
           currentStepRoleCode: roles.code,
+          currentStepRoleNameId: roles.nameId,
+          currentStepRoleNameEn: roles.nameEn,
           currentAssigneeUserId: approvalRequestSteps.assigneeUserId,
+          currentAssigneeName: users.name,
         })
         .from(approvalRequests)
         .innerJoin(vendors, eq(vendors.id, approvalRequests.subjectVendorId))
@@ -264,6 +318,7 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
           ),
         )
         .leftJoin(roles, eq(roles.id, approvalRequestSteps.roleId))
+        .leftJoin(users, eq(users.id, approvalRequestSteps.assigneeUserId))
         .where(and(...conds))
         .orderBy(asc(approvalRequests.createdAt));
       return rows.map((r) => ({
@@ -275,7 +330,10 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         currentStepNo: r.currentStepNo,
         currentStepRoleId: r.currentStepRoleId,
         currentStepRoleCode: r.currentStepRoleCode,
+        currentStepRoleNameId: r.currentStepRoleNameId,
+        currentStepRoleNameEn: r.currentStepRoleNameEn,
         currentAssigneeUserId: r.currentAssigneeUserId,
+        currentAssigneeName: r.currentAssigneeName,
         submittedBy: r.submittedBy,
         createdAt: r.createdAt.toISOString(),
       }));
@@ -433,6 +491,37 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         if (!detail) throw new Error("approval request vanished mid-reassign");
         return { ok: true, detail };
       }),
+
+    rolesForUser: async (userId) => {
+      const rows = await dbHandle
+        .select({ roleId: userRoles.roleId })
+        .from(userRoles)
+        .innerJoin(roles, eq(roles.id, userRoles.roleId))
+        .where(and(eq(userRoles.userId, userId), eq(roles.active, true)));
+      return rows.map((r) => r.roleId);
+    },
+
+    candidatesForStep: async (requestId, stepNo) => {
+      // The step's role, then the active users who hold it — the pool a delegate/reassign may pick from.
+      const [step] = await dbHandle
+        .select({ roleId: approvalRequestSteps.roleId })
+        .from(approvalRequestSteps)
+        .where(
+          and(
+            eq(approvalRequestSteps.requestId, requestId),
+            eq(approvalRequestSteps.stepNo, stepNo),
+          ),
+        )
+        .limit(1);
+      if (!step) return [];
+      const rows = await dbHandle
+        .select({ userId: users.id, name: users.name, email: users.email })
+        .from(userRoles)
+        .innerJoin(users, eq(users.id, userRoles.userId))
+        .where(and(eq(userRoles.roleId, step.roleId), eq(users.active, true)))
+        .orderBy(asc(users.name));
+      return rows.map((r) => ({ userId: r.userId, name: r.name, email: r.email }));
+    },
   };
 };
 
@@ -462,11 +551,21 @@ const parseBody = async <T>(c: Context<AppEnv>, schema: z.ZodType<T>) => {
 export const approvalRoutes = (store: ApprovalStore = drizzleApprovalStore()): Hono<AppEnv> => {
   const app = new Hono<AppEnv>();
 
+  // The queue. `?mine=1` → steps assigned to me; `?role=1` → steps routed to a role I hold (the shared
+  // team inbox — I can see and pick up work the auto-assignment put on a colleague); `?vendorId=` → one
+  // vendor. `mine` and `role` compose (an assigned-to-me *and* my-role filter); with neither, the whole
+  // open queue. A `?role=1` caller with no session or no roles gets an empty queue (deny-by-default).
   app.get("/", requirePermission(MODULE, "view"), async (c) => {
     const actor = c.var.ctx.actor;
+    const roleIds = c.req.query("role")
+      ? actor
+        ? await store.rolesForUser(actor.userId)
+        : []
+      : undefined;
     const filter: QueueFilter = {
       vendorId: c.req.query("vendorId") || undefined,
       assigneeUserId: c.req.query("mine") ? (actor?.userId ?? undefined) : undefined,
+      roleIds,
     };
     return c.json({ items: await store.listOpen(filter) });
   });
@@ -474,6 +573,14 @@ export const approvalRoutes = (store: ApprovalStore = drizzleApprovalStore()): H
   app.get("/:id", requirePermission(MODULE, "view"), async (c) => {
     const item = await store.getDetail(c.req.param("id"));
     return item ? c.json({ item }) : sendError(c, notFoundError());
+  });
+
+  // The delegate/reassign picker's candidate pool — active users who hold the step's role. Gated on
+  // `approve` (only someone who can decide reassigns), so it never leaks the directory to a viewer.
+  app.get("/:id/steps/:stepNo/candidates", requirePermission(MODULE, "approve"), async (c) => {
+    const stepNo = Number.parseInt(c.req.param("stepNo"), 10);
+    if (!Number.isInteger(stepNo) || stepNo < 1) return sendError(c, validationError());
+    return c.json({ items: await store.candidatesForStep(c.req.param("id"), stepNo) });
   });
 
   // approve / reject share the decide store; the verb differs and reject requires a reason. `requestId`
