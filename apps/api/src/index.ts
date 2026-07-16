@@ -97,7 +97,9 @@ app.use("/vendors/:vendorId/*", requireVendorOwnership());
 // Draft → Pending). `GET /vendors/me` resumes; `POST /vendors` creates a Draft + owner link; PUT saves
 // leniently; `POST /vendors/:id/submit` runs the M3.4 whole-aggregate gate then transitions Draft→
 // Pending, catching the `tax_id` partial-unique as a friendly 409. Gated on `vendors`, audited.
-app.route("/vendors", vendorRoutes());
+// Mounted at "/" (its handlers carry the full `/vendors/...` paths, like `meRoutes`), so it is NOT
+// double-prefixed the way the relative-path bank/document sub-routers below are.
+app.route("/", vendorRoutes());
 
 // M3.2 (#43): Vendor bank accounts + attachments — the vendor-scoped bank block (CRUD + M:N currencies
 // + MinIO proof/KTP/surat uploads with signed-URL reads), gated on `vendors`. Enforces the ADR-0013/0005
