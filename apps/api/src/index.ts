@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { accessRoutes } from "./access-route";
+import { approvalRouteRoutes } from "./approval-routes-route";
 import { auditRoutes } from "./audit-route";
 import { auth } from "./auth";
 import { type AppEnv, requestContext } from "./context";
@@ -69,5 +70,11 @@ app.route("/console/registration-lists", registrationListRoutes());
 // `mandatory`, active flag `enabled`) plus the M:N category-requirements matrix the M5.2 activation
 // gate reads. Also a thin instantiation of the M2.1 framework, gated on `document_master`.
 app.route("/console/document-master", documentMasterRoutes());
+
+// M2.4 (#35): Approval Routes — the trigger→ordered-steps routing table the M4 engine resolves. The
+// route header is a thin M2.1 instantiation (gated on `approval_routes`); the steps sub-router carries
+// the deadlock guard (ADR-0011b) that warns, re-confirmably, before a save strands a step with no
+// eligible approver (reusing the M1.5 eligibility count + M1.6 SoD primitive).
+app.route("/console/approval-routes", approvalRouteRoutes());
 
 export default { port: env.port, fetch: app.fetch };
