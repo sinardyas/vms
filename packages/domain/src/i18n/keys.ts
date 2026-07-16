@@ -604,6 +604,23 @@ export const catalogue = {
     en: "This step is not the current step awaiting a decision.",
   },
 
+  // --- Transitions + freeze/recall (M4.4, #59, ADR-0010/0014) ---
+  // Recall attempted on a vendor that isn't awaiting review (already Draft/Active) — nothing to withdraw.
+  "error.approval.notRecallable": {
+    id: "Tidak ada pengajuan yang sedang ditinjau untuk ditarik kembali.",
+    en: "There is no registration under review to recall.",
+  },
+  // Recall attempted after review has started (a step was decided) — change now needs a rejection instead.
+  "error.approval.recallAfterDecision": {
+    id: "Pengajuan sudah mulai ditinjau dan tidak dapat ditarik kembali — perubahan kini melalui penolakan.",
+    en: "Review has already started, so this can no longer be recalled — changes now go through a rejection.",
+  },
+  // Opening a second change while one is still pending (one-pending-change lock, ADR-0010 partial index).
+  "error.approval.changePending": {
+    id: "Vendor ini masih memiliki perubahan yang menunggu persetujuan — selesaikan dulu.",
+    en: "This vendor already has a change awaiting approval — resolve it first.",
+  },
+
   // --- Portal UI chrome (M3.5, #46) — bilingual labels for the self-registration portal. ---
   "portal.shell.subtitle": { id: "Portal Vendor", en: "Vendor Portal" },
   "portal.nav.dashboard": { id: "Beranda", en: "Dashboard" },

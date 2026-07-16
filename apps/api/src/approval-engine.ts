@@ -30,6 +30,34 @@ import { writeAudit } from "./audit";
 /** An open Drizzle transaction handle — what the caller's `db.transaction(async (tx) => …)` yields. */
 export type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 
+/**
+ * The one-pending-change lock tripped (ADR-0010): the subject already has an open (`pending`) request, so
+ * a second can't be opened until it resolves. Thrown by {@link openRegistrationRequest} (both the
+ * pre-check and, as a race backstop, the `approval_requests_one_pending_per_vendor_uq` unique violation);
+ * the caller catches it via {@link isOnePendingChange} and surfaces a friendly 409 rather than a raw 500.
+ */
+export class OnePendingChangeError extends Error {
+  constructor(readonly vendorId: string) {
+    super(`vendor "${vendorId}" already has a pending approval request`);
+    this.name = "OnePendingChangeError";
+  }
+}
+
+/** Type guard — did opening a request trip the one-pending-change lock? */
+export const isOnePendingChange = (error: unknown): error is OnePendingChangeError =>
+  error instanceof OnePendingChangeError;
+
+/** A Postgres unique-violation on the one-pending-per-vendor partial index (the race backstop). */
+const isOnePendingConflict = (error: unknown): boolean => {
+  const e = error as { code?: string; constraint_name?: string } | null;
+  if (!e || e.code !== "23505") return false;
+  const constraint = e.constraint_name ?? "";
+  return (
+    constraint.includes("one_pending_per_vendor") ||
+    String(error).includes("approval_requests_one_pending_per_vendor_uq")
+  );
+};
+
 /** What opening a request needs: the subject vendor, the trigger to route on, and who submitted it. */
 export type OpenRequestInput = {
   readonly vendorId: string;
@@ -75,17 +103,38 @@ export const openRegistrationRequest = async (
     throw new Error(`approval route for trigger "${input.trigger}" has no steps`);
   }
 
-  const [request] = await tx
-    .insert(approvalRequests)
-    .values({
-      subjectVendorId: input.vendorId,
-      trigger: input.trigger,
-      status: "pending",
-      routeId: route.id,
-      currentStepNo: 1,
-      submittedBy: input.submitterUserId,
-    })
-    .returning({ id: approvalRequests.id });
+  // One-pending-change lock (ADR-0010): a subject can carry at most one open request. Pre-check for a
+  // clear error, with the partial unique index as the race backstop below — an active vendor with a
+  // change in flight (M4.5) can't open another, and a registration can't double-open.
+  const [existingPending] = await tx
+    .select({ id: approvalRequests.id })
+    .from(approvalRequests)
+    .where(
+      and(
+        eq(approvalRequests.subjectVendorId, input.vendorId),
+        eq(approvalRequests.status, "pending"),
+      ),
+    )
+    .limit(1);
+  if (existingPending) throw new OnePendingChangeError(input.vendorId);
+
+  let request: { id: string } | undefined;
+  try {
+    [request] = await tx
+      .insert(approvalRequests)
+      .values({
+        subjectVendorId: input.vendorId,
+        trigger: input.trigger,
+        status: "pending",
+        routeId: route.id,
+        currentStepNo: 1,
+        submittedBy: input.submitterUserId,
+      })
+      .returning({ id: approvalRequests.id });
+  } catch (error) {
+    if (isOnePendingConflict(error)) throw new OnePendingChangeError(input.vendorId);
+    throw error;
+  }
   if (!request) throw new Error("approval request insert returned no row");
 
   // Step 1 opens now → assign its role's lead; later steps are assigned when they open (on advance).

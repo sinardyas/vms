@@ -140,6 +140,10 @@ const fakeStore = (
       submitTargets.push(targetStatus);
       return "submitted";
     },
+    recall: async (_ctx, id) => {
+      calls.push(`recall:${id}`);
+      return "recalled";
+    },
     ...overrides,
   };
 };
@@ -380,5 +384,70 @@ describe("POST /vendors/:id/submit — the gate", () => {
       json("POST", {}),
     );
     expect(res.status).toBe(422);
+  });
+
+  test("409 changePending when the vendor already carries an open request (one-pending lock)", async () => {
+    const store = fakeStore({ submit: async () => "change_pending" });
+    const res = await mount(() => actor("vendor", ["edit"]), store).request(
+      `/vendors/${VENDOR}/submit`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.messageKey).toBe("error.approval.changePending");
+  });
+});
+
+describe("POST /vendors/:id/recall — submitter withdraw (M4.4, ADR-0010)", () => {
+  const pending = { ...readyLocal, status: "pending" as const };
+
+  test("200 recalled → store.recall called", async () => {
+    const store = fakeStore({ getById: async () => pending });
+    const res = await mount(() => actor("vendor", ["edit"]), store).request(
+      `/vendors/${VENDOR}/recall`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(200);
+    expect(store.calls).toContain(`recall:${VENDOR}`);
+  });
+
+  test("404 on an unknown vendor — recall untouched", async () => {
+    const store = fakeStore({ getById: async () => null });
+    const res = await mount(() => actor("vendor", ["edit"]), store).request(
+      `/vendors/${VENDOR}/recall`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(404);
+    expect(store.calls).not.toContain(`recall:${VENDOR}`);
+  });
+
+  test("409 notRecallable when the vendor isn't under review", async () => {
+    const store = fakeStore({ getById: async () => pending, recall: async () => "not_pending" });
+    const res = await mount(() => actor("vendor", ["edit"]), store).request(
+      `/vendors/${VENDOR}/recall`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.messageKey).toBe("error.approval.notRecallable");
+  });
+
+  test("409 recallAfterDecision once a step has been decided", async () => {
+    const store = fakeStore({
+      getById: async () => pending,
+      recall: async () => "already_decided",
+    });
+    const res = await mount(() => actor("vendor", ["edit"]), store).request(
+      `/vendors/${VENDOR}/recall`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.messageKey).toBe("error.approval.recallAfterDecision");
+  });
+
+  test("403 without the edit verb", async () => {
+    const res = await mount(() => actor("vendor", ["view"]), fakeStore()).request(
+      `/vendors/${VENDOR}/recall`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(403);
   });
 });
