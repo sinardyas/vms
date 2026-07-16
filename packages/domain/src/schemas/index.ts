@@ -16,6 +16,7 @@ import { type Result, err, ok } from "../result";
 
 export * from "./common";
 export * from "./vendor-bank";
+export * from "./vendor-document";
 
 /** Convert a Zod error into a typed validation DomainError (issues ride along as `details`). */
 export const zodError = (error: z.ZodError): DomainError =>
