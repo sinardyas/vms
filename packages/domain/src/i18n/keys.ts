@@ -563,6 +563,245 @@ export const catalogue = {
     id: "Dokumen wajib ini belum diunggah.",
     en: "This required document has not been uploaded yet.",
   },
+
+  // --- Vendor aggregate + submit endpoint (M3.5, #46, ADR-0004/0010) ---
+  // Submit blocked because the Tax ID (NPWP) is already held by a non-Draft vendor (partial-unique).
+  // Friendly + actionable, no PII about the other record (ADR-0004): sign in or contact support.
+  "error.vendor.taxIdDuplicate": {
+    id: "NPWP/Tax ID ini sudah terdaftar. Jika ini perusahaan Anda, silakan masuk dengan akun yang ada atau hubungi tim pengadaan.",
+    en: "This Tax ID (NPWP) is already registered. If this is your company, sign in with the existing account or contact procurement.",
+  },
+  // A vendor-kind user tried to reach a vendor record they don't own (own-vendor scoping).
+  "error.vendor.notOwner": {
+    id: "Anda tidak memiliki akses ke data vendor ini.",
+    en: "You don't have access to this vendor record.",
+  },
+  // Edit/submit attempted on a vendor that has already left Draft (only Drafts are editable here).
+  "error.vendor.notDraft": {
+    id: "Pendaftaran ini bukan lagi Draft dan tidak dapat diubah di sini.",
+    en: "This registration is no longer a Draft and can't be changed here.",
+  },
+  // A vendor-kind user who already owns a registration tried to start a second one (single-owner).
+  "error.vendor.alreadyRegistered": {
+    id: "Akun Anda sudah memiliki pendaftaran vendor — lanjutkan yang sudah ada.",
+    en: "Your account already has a vendor registration — continue the existing one.",
+  },
+
+  // --- Portal UI chrome (M3.5, #46) — bilingual labels for the self-registration portal. ---
+  "portal.shell.subtitle": { id: "Portal Vendor", en: "Vendor Portal" },
+  "portal.nav.dashboard": { id: "Beranda", en: "Dashboard" },
+  "portal.nav.registration": { id: "Pendaftaran Saya", en: "My Registration" },
+  "portal.nav.documents": { id: "Dokumen", en: "Documents" },
+
+  "portal.common.save": { id: "Simpan", en: "Save" },
+  "portal.common.saveDraft": { id: "Simpan draft", en: "Save draft" },
+  "portal.common.continue": { id: "Lanjut", en: "Continue" },
+  "portal.common.back": { id: "Kembali", en: "Back" },
+  "portal.common.cancel": { id: "Batal", en: "Cancel" },
+  "portal.common.add": { id: "Tambah", en: "Add" },
+  "portal.common.remove": { id: "Hapus", en: "Remove" },
+  "portal.common.edit": { id: "Ubah", en: "Edit" },
+  "portal.common.optional": { id: "Opsional", en: "Optional" },
+  "portal.common.loading": { id: "Memuat…", en: "Loading…" },
+  "portal.common.saved": { id: "Tersimpan", en: "Saved" },
+  "portal.common.yes": { id: "Ya", en: "Yes" },
+  "portal.common.no": { id: "Tidak", en: "No" },
+  "portal.common.select": { id: "Pilih…", en: "Select…" },
+
+  "portal.auth.signInTitle": { id: "Masuk ke Portal Vendor", en: "Sign in to the Vendor Portal" },
+  "portal.auth.signInSubtitle": {
+    id: "Kelola pendaftaran dan dokumen perusahaan Anda.",
+    en: "Manage your company's registration and documents.",
+  },
+  "portal.auth.email": { id: "Email", en: "Email" },
+  "portal.auth.password": { id: "Kata sandi", en: "Password" },
+  "portal.auth.confirmPassword": { id: "Konfirmasi kata sandi", en: "Confirm password" },
+  "portal.auth.name": { id: "Nama Anda", en: "Your name" },
+  "portal.auth.signIn": { id: "Masuk", en: "Sign in" },
+  "portal.auth.signOut": { id: "Keluar", en: "Sign out" },
+  "portal.auth.newVendor": { id: "Vendor baru?", en: "New vendor?" },
+  "portal.auth.registerHere": { id: "Daftar di sini", en: "Register here" },
+  "portal.auth.registerTitle": { id: "Buat akun vendor", en: "Create a vendor account" },
+  "portal.auth.registerSubtitle": {
+    id: "Email ini menjadi nama pengguna Anda dan tidak dapat diubah.",
+    en: "This email becomes your username and cannot be changed later.",
+  },
+  "portal.auth.createAccount": { id: "Buat akun", en: "Create account" },
+  "portal.auth.backToSignIn": { id: "Kembali ke halaman masuk", en: "Back to sign in" },
+  "portal.auth.verifyTitle": { id: "Periksa email Anda", en: "Check your email" },
+  "portal.auth.verifyBody": {
+    id: "Kami mengirim tautan verifikasi ke email Anda. Buka tautan itu, lalu masuk untuk melanjutkan pendaftaran.",
+    en: "We've sent a verification link to your email. Open it, then sign in to continue your registration.",
+  },
+  "portal.auth.heroTitle": { id: "Manajemen Vendor Soechi", en: "Soechi Vendor Management" },
+  "portal.auth.heroBody": {
+    id: "Satu sistem, dua ruang kerja — daftar, unggah dokumen, dan pantau kualifikasi Anda.",
+    en: "One system, two workspaces — register, upload documents, and track your qualification.",
+  },
+  "portal.auth.signInError": {
+    id: "Email atau kata sandi salah, atau email belum diverifikasi.",
+    en: "Wrong email or password, or the email isn't verified yet.",
+  },
+  "portal.auth.signUpError": {
+    id: "Tidak dapat membuat akun. Coba lagi.",
+    en: "Couldn't create the account. Please try again.",
+  },
+  "portal.auth.passwordMismatch": {
+    id: "Konfirmasi kata sandi tidak cocok.",
+    en: "Password confirmation doesn't match.",
+  },
+  "portal.auth.passwordTooShort": {
+    id: "Kata sandi minimal 8 karakter.",
+    en: "Password must be at least 8 characters.",
+  },
+
+  "portal.reg.startTitle": { id: "Mulai pendaftaran vendor", en: "Start your vendor registration" },
+  "portal.reg.startBody": {
+    id: "Pilih asal perusahaan Anda untuk membuat draft. Anda dapat keluar dan melanjutkannya kapan saja.",
+    en: "Choose your company's origin to create a draft. You can leave and resume it anytime.",
+  },
+  "portal.reg.originQuestion": { id: "Asal vendor", en: "Vendor origin" },
+  "portal.reg.originLocalHint": {
+    id: "PT / CV · NPWP, NIB · PPN 11% + PPh 23",
+    en: "PT / CV · NPWP, NIB · VAT 11% + WHT 23",
+  },
+  "portal.reg.originForeignHint": {
+    id: "Berbadan hukum di luar negeri · Form DGT · PPh 26",
+    en: "Incorporated abroad · Form DGT · WHT 26",
+  },
+  "portal.reg.companyName": { id: "Nama perusahaan", en: "Company name" },
+  "portal.reg.create": { id: "Buat draft", en: "Create draft" },
+  "portal.reg.title": { id: "Pendaftaran Vendor", en: "Vendor Registration" },
+  "portal.reg.stepsTitle": { id: "Langkah pendaftaran", en: "Onboarding steps" },
+  "portal.reg.stepOf": { id: "Langkah {n} dari {total}", en: "Step {n} of {total}" },
+  "portal.reg.draftSaved": { id: "Draft tersimpan.", en: "Draft saved." },
+
+  "portal.step.company": { id: "Informasi Perusahaan", en: "Company Information" },
+  "portal.step.companySub": { id: "Detail & PIC", en: "Details & PIC" },
+  "portal.step.bank": { id: "Pembayaran & Bank", en: "Payment & Bank" },
+  "portal.step.bankSub": { id: "Termin & rekening", en: "Terms & account" },
+  "portal.step.documents": { id: "Dokumen", en: "Documents" },
+  "portal.step.documentsSub": { id: "Unggah berkas", en: "Upload files" },
+  "portal.step.review": { id: "Tinjau & Kirim", en: "Review & Submit" },
+  "portal.step.reviewSub": { id: "Kirim untuk kualifikasi", en: "Submit for qualification" },
+
+  "portal.section.identity": { id: "Identitas & Pajak", en: "Identity & Tax" },
+  "portal.section.address": { id: "Alamat", en: "Address" },
+  "portal.section.people": { id: "Kontak & PIC", en: "Contacts & PIC" },
+  "portal.section.payment": { id: "Termin Pembayaran", en: "Payment Terms" },
+
+  "portal.field.name": { id: "Nama perusahaan", en: "Company name" },
+  "portal.field.businessEntity": { id: "Badan usaha", en: "Business entity" },
+  "portal.field.category": { id: "Klasifikasi", en: "Classification" },
+  "portal.field.taxId": { id: "NPWP / Tax ID", en: "NPWP / Tax ID" },
+  "portal.field.taxStatus": { id: "Status pajak", en: "Tax status" },
+  "portal.field.npwpType": { id: "Jenis NPWP", en: "NPWP type" },
+  "portal.field.companyScale": { id: "Skala perusahaan", en: "Company scale" },
+  "portal.field.procurementNote": { id: "Pengadaan vendor", en: "Vendor procurement" },
+  "portal.field.address": { id: "Alamat", en: "Address" },
+  "portal.field.city": { id: "Kota", en: "City" },
+  "portal.field.postal": { id: "Kode pos", en: "Postal code" },
+  "portal.field.country": { id: "Negara", en: "Country" },
+  "portal.field.phone": { id: "No. telepon", en: "Phone no." },
+  "portal.field.fax": { id: "Faks", en: "Fax" },
+  "portal.field.yearFounded": { id: "Tahun berdiri", en: "Year established" },
+  "portal.field.website": { id: "Situs web", en: "Website" },
+  "portal.field.email": { id: "Email korespondensi", en: "Correspondence email" },
+  "portal.field.commissioner": { id: "Nama komisaris", en: "Commissioner name" },
+  "portal.field.director": { id: "Nama direktur", en: "Director name" },
+  "portal.field.picName": { id: "PIC (penanggung jawab)", en: "PIC (person in charge)" },
+  "portal.field.picRole": { id: "Jabatan PIC", en: "PIC position" },
+  "portal.field.picPhone": { id: "No. telepon PIC", en: "PIC phone no." },
+  "portal.field.picPhoneHint": { id: "Nomor WhatsApp wajib.", en: "WhatsApp number required." },
+  "portal.field.picEmail": { id: "Email PIC", en: "PIC email" },
+  "portal.field.soechiReference": {
+    id: "Nama referensi (Grup Soechi)",
+    en: "Reference name (Soechi Group)",
+  },
+  "portal.field.paymentTerm": { id: "Termin pembayaran", en: "Payment terms" },
+  "portal.field.emailLocked": {
+    id: "Email dikunci dari akun Anda.",
+    en: "Email is locked from your account.",
+  },
+
+  "portal.bank.title": { id: "Rekening Bank", en: "Bank Accounts" },
+  "portal.bank.primaryBadge": { id: "Bank Utama", en: "Main Bank" },
+  "portal.bank.makePrimary": { id: "Jadikan Bank Utama", en: "Set as Main Bank" },
+  "portal.bank.add": { id: "Tambah rekening", en: "Add account" },
+  "portal.bank.none": {
+    id: "Belum ada rekening. Tambahkan minimal satu untuk mengirim.",
+    en: "No accounts yet. Add at least one to submit.",
+  },
+  "portal.bank.bankName": { id: "Nama bank", en: "Bank name" },
+  "portal.bank.accountNo": { id: "Nomor rekening", en: "Account number" },
+  "portal.bank.holderName": { id: "Nama pemilik rekening", en: "Account holder name" },
+  "portal.bank.branch": { id: "Cabang", en: "Branch" },
+  "portal.bank.currency": { id: "Mata uang", en: "Currency" },
+  "portal.bank.swift": { id: "Kode SWIFT", en: "SWIFT code" },
+  "portal.bank.iban": { id: "IBAN", en: "IBAN" },
+  "portal.bank.bankCountry": { id: "Negara bank", en: "Bank country" },
+  "portal.bank.description": { id: "Deskripsi", en: "Description" },
+  "portal.bank.holderSameQuestion": {
+    id: "Apakah nama pemilik rekening sama dengan nama perusahaan?",
+    en: "Is the account holder name the same as the company name?",
+  },
+  "portal.bank.holderSameYes": { id: "Ya, sama dengan perusahaan", en: "Yes, same as company" },
+  "portal.bank.holderSameNo": {
+    id: "Tidak, rekening pribadi (unggah KTP)",
+    en: "No, personal account (upload KTP)",
+  },
+  "portal.bank.proof": { id: "Bukti rekening (buku tabungan)", en: "Account proof (bank book)" },
+  "portal.bank.ktp": { id: "KTP pemilik rekening", en: "Account holder ID card (KTP)" },
+  "portal.bank.surat": { id: "Surat pernyataan (bermaterai)", en: "Statement letter (stamped)" },
+  "portal.bank.remark": {
+    id: "Keterangan (negara bank berbeda)",
+    en: "Remark (bank country differs)",
+  },
+
+  "portal.doc.title": { id: "Dokumen Kepatuhan", en: "Compliance Documents" },
+  "portal.doc.mandatory": { id: "Wajib", en: "Mandatory" },
+  "portal.doc.optional": { id: "Opsional", en: "Optional" },
+  "portal.doc.browse": { id: "Pilih berkas", en: "Browse" },
+  "portal.doc.uploaded": { id: "Terunggah", en: "Uploaded" },
+  "portal.doc.replace": { id: "Ganti", en: "Replace" },
+  "portal.doc.refNo": { id: "No. dokumen", en: "Document no." },
+  "portal.doc.variant": { id: "Jenis / varian", en: "Type / variant" },
+  "portal.doc.constraint": {
+    id: "PDF, JPG, atau PNG — maks 10 MB.",
+    en: "PDF, JPG, or PNG — max 10 MB.",
+  },
+  "portal.doc.none": {
+    id: "Belum ada dokumen wajib untuk klasifikasi ini.",
+    en: "No mandatory documents for this classification yet.",
+  },
+
+  "portal.review.title": { id: "Tinjau & Kirim", en: "Review & Submit" },
+  "portal.review.note": {
+    id: "Anda tetap dapat masuk selagi kualifikasi diproses.",
+    en: "You can sign in while qualification is pending.",
+  },
+  "portal.review.complete": { id: "Lengkap", en: "Complete" },
+  "portal.review.incomplete": { id: "Belum lengkap", en: "Incomplete" },
+  "portal.review.blockersTitle": {
+    id: "Lengkapi hal berikut sebelum mengirim:",
+    en: "Complete the following before submitting:",
+  },
+  "portal.review.submit": { id: "Kirim pendaftaran", en: "Submit registration" },
+  "portal.review.sectionProfile": { id: "Profil perusahaan", en: "Company profile" },
+  "portal.review.sectionBanks": { id: "Rekening bank", en: "Bank accounts" },
+  "portal.review.sectionDocuments": { id: "Dokumen", en: "Documents" },
+
+  "portal.status.title": { id: "Status Pendaftaran", en: "Registration Status" },
+  "portal.status.draft": { id: "Draft", en: "Draft" },
+  "portal.status.pending": { id: "Menunggu Kualifikasi", en: "Pending Qualification" },
+  "portal.status.pendingBody": {
+    id: "Pendaftaran Anda telah dikirim dan sedang ditinjau oleh tim AP & verifikasi dokumen.",
+    en: "Your registration has been submitted and is under review by the AP & document-verification team.",
+  },
+  "portal.status.draftBody": {
+    id: "Pendaftaran Anda masih berupa draft. Lengkapi dan kirim saat siap.",
+    en: "Your registration is still a draft. Complete and submit it when ready.",
+  },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */
