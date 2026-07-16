@@ -13,6 +13,15 @@
  */
 
 import {
+  ArrowLeft,
+  Bank,
+  ClockCounterClockwise,
+  FileText,
+  IdentificationCard,
+  MagnifyingGlass,
+  Plus,
+} from "@phosphor-icons/react";
+import {
   COMPANY_SCALES,
   type MessageKey,
   NPWP_TYPES,
@@ -20,11 +29,13 @@ import {
   type SubmitReadiness,
   TAX_STATUSES,
   VENDOR_SUBMIT_REQUIRED,
+  type VendorStatus,
   type VendorSubmissionCandidate,
   checkVendorSubmittable,
   resolveLabel,
 } from "@vms/domain";
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -38,20 +49,38 @@ import {
   Field,
   Input,
   StatusPill,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableEmpty,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  useCapabilities,
   useLocale,
   useT,
   useToast,
+  vendorStatusTone,
 } from "@vms/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  type AuditRowDTO,
   type BankDTO,
   type BilingualRow,
   type CountryRow,
   type CurrencyRow,
+  type DocumentSlotDTO,
   type RequiredDocumentDTO,
   VendorApiError,
   type VendorDTO,
   type VendorDraftPayload,
+  type VendorSummaryDTO,
+  auditApi,
   banksApi,
   docsApi,
   listsApi,
@@ -103,16 +132,43 @@ function HodNotice() {
   );
 }
 
-/* ── Top-level state machine: start → wizard → done ───────────────────────────────────────────── */
+/* ── Top-level: vendor list → (profile view | office registration) ────────────────────────────── */
 
+/**
+ * The console **Vendors** section (M3.7). Its home is the browse **list**; from there a row opens the
+ * read-only **profile** (details/docs/bank/activity tabs), and the "Register vendor" action drops into
+ * the M3.6 office-registration wizard. Both the list and the profile gate on `vendors:view` (the nav
+ * item is already hidden without it); "Register vendor" additionally needs `vendors:add`.
+ */
 export function Vendors() {
+  const [mode, setMode] = useState<
+    { v: "list" } | { v: "register" } | { v: "profile"; id: string }
+  >({ v: "list" });
+
+  if (mode.v === "register") return <OfficeRegistration onClose={() => setMode({ v: "list" })} />;
+  if (mode.v === "profile")
+    return <VendorProfile vendorId={mode.id} onBack={() => setMode({ v: "list" })} />;
+  return (
+    <VendorList
+      onOpen={(id) => setMode({ v: "profile", id })}
+      onRegister={() => setMode({ v: "register" })}
+    />
+  );
+}
+
+/* ── Office registration: start → wizard → done ───────────────────────────────────────────────── */
+
+function OfficeRegistration({ onClose }: { onClose: () => void }) {
   const [phase, setPhase] = useState<
     { step: "start" } | { step: "wizard"; vendor: VendorDTO } | { step: "done" }
   >({ step: "start" });
 
   if (phase.step === "start")
-    return <StartPanel onCreated={(vendor) => setPhase({ step: "wizard", vendor })} />;
-  if (phase.step === "done") return <DonePanel onAgain={() => setPhase({ step: "start" })} />;
+    return (
+      <StartPanel onCreated={(vendor) => setPhase({ step: "wizard", vendor })} onCancel={onClose} />
+    );
+  if (phase.step === "done")
+    return <DonePanel onAgain={() => setPhase({ step: "start" })} onClose={onClose} />;
   return (
     <Wizard
       vendor={phase.vendor}
@@ -124,7 +180,10 @@ export function Vendors() {
 }
 
 /** Landing — intro + HOD notice, pick origin + company name, create the office Draft, drop into wizard. */
-function StartPanel({ onCreated }: { onCreated: (v: VendorDTO) => void }) {
+function StartPanel({
+  onCreated,
+  onCancel,
+}: { onCreated: (v: VendorDTO) => void; onCancel: () => void }) {
   const { locale } = useLocale();
   const t = useT();
   const { toast } = useToast();
@@ -146,6 +205,10 @@ function StartPanel({ onCreated }: { onCreated: (v: VendorDTO) => void }) {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-5">
+      <Button variant="ghost" size="sm" className="self-start" onClick={onCancel}>
+        <ArrowLeft weight="bold" />
+        {t("console.vendorList.backToList")}
+      </Button>
       <Card>
         <CardHeader>
           <CardTitle>{t("console.vendorReg.startTitle")}</CardTitle>
@@ -195,8 +258,8 @@ function StartPanel({ onCreated }: { onCreated: (v: VendorDTO) => void }) {
   );
 }
 
-/** Submitted → Pending-HOD confirmation; the office user can register another. */
-function DonePanel({ onAgain }: { onAgain: () => void }) {
+/** Submitted → Pending-HOD confirmation; the office user can register another or return to the list. */
+function DonePanel({ onAgain, onClose }: { onAgain: () => void; onClose: () => void }) {
   const t = useT();
   return (
     <Card className="mx-auto max-w-2xl">
@@ -208,9 +271,679 @@ function DonePanel({ onAgain }: { onAgain: () => void }) {
           <StatusPill tone="info">{t("console.vendorReg.successTitle")}</StatusPill>
         </div>
         <p className="text-sm text-muted-foreground">{t("console.vendorReg.successBody")}</p>
-        <div>
+        <div className="flex gap-2">
           <Button onClick={onAgain}>{t("console.vendorReg.registerAnother")}</Button>
+          <Button variant="secondary" onClick={onClose}>
+            {t("console.vendorList.backToList")}
+          </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── Vendor browse list ───────────────────────────────────────────────────────────────────────── */
+
+/** `enum.vendorStatus.*` label key for a status code (unknown codes fall back to the raw code). */
+const statusKey = (status: string): MessageKey => `enum.vendorStatus.${status}` as MessageKey;
+/** Lifecycle tone for a status code — `neutral` for anything outside the known set. */
+const statusTone = (status: string) => vendorStatusTone[status as VendorStatus] ?? "neutral";
+/** Two-letter monogram for a vendor's avatar tile. */
+const initials = (name: string): string =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("") || "?";
+
+function VendorList({
+  onOpen,
+  onRegister,
+}: { onOpen: (id: string) => void; onRegister: () => void }) {
+  const { locale } = useLocale();
+  const t = useT();
+  const { can } = useCapabilities();
+  const lists = useLists();
+  const [vendors, setVendors] = useState<VendorSummaryDTO[] | null>(null);
+  const [error, setError] = useState(false);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    setVendors(null);
+    setError(false);
+    vendorApi
+      .list(locale)
+      .then((v) => {
+        if (alive) setVendors(v);
+      })
+      .catch(() => {
+        if (alive) setError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [locale]);
+
+  const categoryLabel = useCallback(
+    (id: string | null): string => {
+      const row = id ? lists?.categories.find((r) => r.id === id) : undefined;
+      return row ? resolveLabel({ id: row.nameId, en: row.nameEn }, locale) : "—";
+    },
+    [lists, locale],
+  );
+  const countryLabel = useCallback(
+    (id: string | null): string => lists?.countries.find((c) => c.id === id)?.name ?? "—",
+    [lists],
+  );
+
+  const filtered = useMemo(() => {
+    const rows = vendors ?? [];
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((v) =>
+      [
+        v.name,
+        v.taxId ?? "",
+        categoryLabel(v.categoryId),
+        countryLabel(v.countryId),
+        t(statusKey(v.status)),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [vendors, query, categoryLabel, countryLabel, t]);
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-start justify-between gap-4">
+        <div>
+          <CardTitle>{t("console.vendorList.title")}</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">{t("console.vendorList.subtitle")}</p>
+        </div>
+        {can("vendors", "add") && (
+          <Button size="sm" onClick={onRegister}>
+            <Plus weight="bold" />
+            {t("console.vendorReg.registerCta")}
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="relative">
+          <MagnifyingGlass
+            weight="bold"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("console.vendorList.searchPlaceholder")}
+            className="pl-9"
+          />
+        </div>
+
+        <TableContainer>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("console.vendorList.colVendor")}</TableHead>
+                <TableHead>{t("console.vendorList.colCountry")}</TableHead>
+                <TableHead>{t("console.vendorList.colCategory")}</TableHead>
+                <TableHead>{t("console.vendorList.colTaxId")}</TableHead>
+                <TableHead>{t("console.vendorList.colStatus")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {error ? (
+                <TableEmpty colSpan={5}>{t("console.vendorList.loadError")}</TableEmpty>
+              ) : vendors === null ? (
+                <TableEmpty colSpan={5}>{t("portal.common.loading")}</TableEmpty>
+              ) : filtered.length === 0 ? (
+                <TableEmpty colSpan={5}>
+                  {query.trim() ? t("console.vendorList.noResults") : t("console.vendorList.empty")}
+                </TableEmpty>
+              ) : (
+                filtered.map((v) => (
+                  <TableRow key={v.id}>
+                    <TableCell>
+                      <button
+                        type="button"
+                        onClick={() => onOpen(v.id)}
+                        className="flex items-center gap-3 text-left"
+                      >
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-xs font-bold text-primary">
+                          {initials(v.name)}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold text-foreground hover:text-primary">
+                            {v.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {t(
+                              v.source === "office"
+                                ? "console.vendorList.sourceOffice"
+                                : "console.vendorList.sourceSelf",
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {countryLabel(v.countryId)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {categoryLabel(v.categoryId)}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {v.taxId ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      <StatusPill tone={statusTone(v.status)}>{t(statusKey(v.status))}</StatusPill>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── Vendor profile (read-only) — details / documents / bank / activity ───────────────────────── */
+
+function VendorProfile({ vendorId, onBack }: { vendorId: string; onBack: () => void }) {
+  const { locale } = useLocale();
+  const t = useT();
+  const { can } = useCapabilities();
+  const [vendor, setVendor] = useState<VendorDTO | null>(null);
+  const [error, setError] = useState(false);
+  const canAudit = can("audit", "view");
+
+  useEffect(() => {
+    let alive = true;
+    setVendor(null);
+    setError(false);
+    vendorApi
+      .get(locale, vendorId)
+      .then((v) => {
+        if (alive) setVendor(v);
+      })
+      .catch(() => {
+        if (alive) setError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [locale, vendorId]);
+
+  const back = (
+    <Button variant="ghost" size="sm" className="self-start" onClick={onBack}>
+      <ArrowLeft weight="bold" />
+      {t("console.vendorList.backToList")}
+    </Button>
+  );
+
+  if (error)
+    return (
+      <div className="flex flex-col gap-4">
+        {back}
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            {t("console.vendorProfile.loadError")}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  if (!vendor)
+    return (
+      <div className="flex flex-col gap-4">
+        {back}
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            {t("portal.common.loading")}
+          </CardContent>
+        </Card>
+      </div>
+    );
+
+  return (
+    <div className="flex flex-col gap-4">
+      {back}
+      <Card>
+        <CardContent className="flex items-center gap-4 py-5">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
+            {initials(vendor.name)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-lg font-bold text-foreground">{vendor.name}</span>
+              <Badge tone="navy">{t(`enum.origin.${vendor.origin}` as MessageKey)}</Badge>
+              <StatusPill tone={statusTone(vendor.status)}>
+                {t(statusKey(vendor.status))}
+              </StatusPill>
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {t(
+                vendor.source === "office"
+                  ? "console.vendorList.sourceOffice"
+                  : "console.vendorList.sourceSelf",
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="details">
+        <TabsList>
+          <TabsTrigger value="details">
+            <IdentificationCard weight="bold" />
+            {t("console.vendorProfile.tabDetails")}
+          </TabsTrigger>
+          <TabsTrigger value="documents">
+            <FileText weight="bold" />
+            {t("console.vendorProfile.tabDocuments")}
+          </TabsTrigger>
+          <TabsTrigger value="bank">
+            <Bank weight="bold" />
+            {t("console.vendorProfile.tabBank")}
+          </TabsTrigger>
+          {canAudit && (
+            <TabsTrigger value="activity">
+              <ClockCounterClockwise weight="bold" />
+              {t("console.vendorProfile.tabActivity")}
+            </TabsTrigger>
+          )}
+        </TabsList>
+
+        <TabsContent value="details">
+          <DetailsTab vendor={vendor} />
+        </TabsContent>
+        <TabsContent value="documents">
+          <DocumentsTab vendorId={vendorId} />
+        </TabsContent>
+        <TabsContent value="bank">
+          <BankTab vendorId={vendorId} />
+        </TabsContent>
+        {canAudit && (
+          <TabsContent value="activity">
+            <ActivityTab vendorId={vendorId} />
+          </TabsContent>
+        )}
+      </Tabs>
+    </div>
+  );
+}
+
+/** One read-only labelled value in the profile grids. */
+function ReadField({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="rounded-xl border border-input bg-secondary/40 p-3">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold text-foreground">
+        {value === null || value === undefined || value === "" ? "—" : value}
+      </div>
+    </div>
+  );
+}
+
+/** Details tab — the full vendor profile, read-only, with ids resolved to their master labels. */
+function DetailsTab({ vendor }: { vendor: VendorDTO }) {
+  const { locale } = useLocale();
+  const t = useT();
+  const lists = useLists();
+
+  const listLabel = (rows: BilingualRow[] | undefined, id: string | null): string => {
+    const row = id ? rows?.find((r) => r.id === id) : undefined;
+    return row ? resolveLabel({ id: row.nameId, en: row.nameEn }, locale) : "—";
+  };
+  const enumLabel = (prefix: string, value: string | null): string =>
+    value ? t(`${prefix}.${value}` as MessageKey) : "—";
+  const countryName = lists?.countries.find((c) => c.id === vendor.countryId)?.name ?? null;
+
+  const section = (titleKey: MessageKey, children: React.ReactNode) => (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t(titleKey)}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{children}</CardContent>
+    </Card>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      {section(
+        "portal.section.identity",
+        <>
+          <ReadField label={t("portal.field.name")} value={vendor.name} />
+          <ReadField
+            label={t("portal.field.businessEntity")}
+            value={listLabel(lists?.entities, vendor.businessEntityId)}
+          />
+          <ReadField
+            label={t("portal.field.category")}
+            value={listLabel(lists?.categories, vendor.categoryId)}
+          />
+          <ReadField label={t("portal.field.taxId")} value={vendor.taxId} />
+          <ReadField
+            label={t("portal.field.taxStatus")}
+            value={enumLabel("enum.taxStatus", vendor.taxStatus)}
+          />
+          <ReadField
+            label={t("portal.field.npwpType")}
+            value={enumLabel("enum.npwpType", vendor.npwpType)}
+          />
+          <ReadField
+            label={t("portal.field.companyScale")}
+            value={enumLabel("enum.companyScale", vendor.companyScale)}
+          />
+          <ReadField label={t("portal.field.procurementNote")} value={vendor.procurementNote} />
+        </>,
+      )}
+      {section(
+        "portal.section.address",
+        <>
+          <ReadField label={t("portal.field.address")} value={vendor.address} />
+          <ReadField label={t("portal.field.city")} value={vendor.city} />
+          <ReadField label={t("portal.field.postal")} value={vendor.postal} />
+          <ReadField label={t("portal.field.country")} value={countryName} />
+          <ReadField label={t("portal.field.phone")} value={vendor.phone} />
+          <ReadField label={t("portal.field.fax")} value={vendor.fax} />
+          <ReadField
+            label={t("portal.field.yearFounded")}
+            value={vendor.yearFounded === null ? null : String(vendor.yearFounded)}
+          />
+          <ReadField label={t("portal.field.website")} value={vendor.website} />
+          <ReadField label={t("portal.field.email")} value={vendor.email} />
+        </>,
+      )}
+      {section(
+        "portal.section.people",
+        <>
+          <ReadField label={t("portal.field.commissioner")} value={vendor.commissioner} />
+          <ReadField label={t("portal.field.director")} value={vendor.director} />
+          <ReadField label={t("portal.field.picName")} value={vendor.picName} />
+          <ReadField label={t("portal.field.picRole")} value={vendor.picRole} />
+          <ReadField label={t("portal.field.picPhone")} value={vendor.picPhone} />
+          <ReadField label={t("portal.field.picEmail")} value={vendor.picEmail} />
+          <ReadField label={t("portal.field.soechiReference")} value={vendor.soechiReference} />
+        </>,
+      )}
+      {section(
+        "portal.section.payment",
+        <ReadField
+          label={t("portal.field.paymentTerm")}
+          value={enumLabel("enum.paymentTerm", vendor.paymentTerm)}
+        />,
+      )}
+    </div>
+  );
+}
+
+/** Documents tab — the required compliance set, each flagged captured/missing, with a signed preview. */
+function DocumentsTab({ vendorId }: { vendorId: string }) {
+  const { locale } = useLocale();
+  const t = useT();
+  const { toast } = useToast();
+  const [required, setRequired] = useState<RequiredDocumentDTO[] | null>(null);
+  const [slots, setSlots] = useState<DocumentSlotDTO[]>([]);
+  const [error, setError] = useState(false);
+  const [previewing, setPreviewing] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setRequired(null);
+    setError(false);
+    Promise.all([vendorApi.requiredDocuments(locale, vendorId), docsApi.list(locale, vendorId)])
+      .then(([req, sl]) => {
+        if (!alive) return;
+        setRequired(req);
+        setSlots(sl);
+      })
+      .catch(() => {
+        if (alive) setError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [locale, vendorId]);
+
+  const slotByMaster = useMemo(() => new Map(slots.map((s) => [s.documentMasterId, s])), [slots]);
+
+  const preview = async (versionId: string) => {
+    setPreviewing(versionId);
+    try {
+      const url = await docsApi.versionUrl(locale, vendorId, versionId);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      toast({ title: e instanceof VendorApiError ? e.message : String(e), tone: "danger" });
+    } finally {
+      setPreviewing(null);
+    }
+  };
+
+  if (error)
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          {t("console.vendorProfile.loadError")}
+        </CardContent>
+      </Card>
+    );
+  if (required === null)
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          {t("portal.common.loading")}
+        </CardContent>
+      </Card>
+    );
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3 py-5">
+        {required.length === 0 && (
+          <p className="text-sm text-muted-foreground">{t("console.vendorProfile.noDocuments")}</p>
+        )}
+        {required.map((d) => {
+          const slot = slotByMaster.get(d.documentMasterId);
+          const version = slot?.currentVersion ?? null;
+          return (
+            <div
+              key={d.documentMasterId}
+              className="flex items-center justify-between gap-4 rounded-xl border border-input p-4"
+            >
+              <div className="flex items-center gap-3">
+                <FileText weight="fill" className="shrink-0 text-primary" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground">
+                      {resolveLabel({ id: d.nameId, en: d.nameEn }, locale)}
+                    </span>
+                    <StatusPill tone={d.captured ? "success" : "pending"}>
+                      {d.captured
+                        ? t("console.vendorProfile.docCaptured")
+                        : t("console.vendorProfile.docMissing")}
+                    </StatusPill>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {d.no}
+                    {version
+                      ? ` · ${t("console.vendorProfile.docVersion", { n: version.versionNo })}${
+                          version.refNo ? ` · ${version.refNo}` : ""
+                        }`
+                      : ""}
+                  </div>
+                </div>
+              </div>
+              {version && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => preview(version.id)}
+                  disabled={previewing === version.id}
+                >
+                  {previewing === version.id
+                    ? t("portal.common.loading")
+                    : t("console.vendorProfile.docPreview")}
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Bank tab — the vendor's bank accounts, read-only (primary flagged, currencies resolved to codes). */
+function BankTab({ vendorId }: { vendorId: string }) {
+  const { locale } = useLocale();
+  const t = useT();
+  const lists = useLists();
+  const [banks, setBanks] = useState<BankDTO[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setBanks(null);
+    setError(false);
+    banksApi
+      .list(locale, vendorId)
+      .then((b) => {
+        if (alive) setBanks(b);
+      })
+      .catch(() => {
+        if (alive) setError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [locale, vendorId]);
+
+  const currencyCodes = (ids: string[]): string =>
+    ids.map((id) => lists?.currencies.find((c) => c.id === id)?.code ?? id).join(", ");
+
+  if (error)
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          {t("console.vendorProfile.loadError")}
+        </CardContent>
+      </Card>
+    );
+  if (banks === null)
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          {t("portal.common.loading")}
+        </CardContent>
+      </Card>
+    );
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3 py-5">
+        {banks.length === 0 && (
+          <p className="text-sm text-muted-foreground">{t("console.vendorProfile.noBanks")}</p>
+        )}
+        {banks.map((b) => (
+          <div key={b.id} className="rounded-xl border border-input p-4">
+            <div className="mb-3 flex items-center gap-3">
+              <Bank weight="fill" className="text-primary" />
+              <span className="font-semibold text-foreground">{b.bankName}</span>
+              {b.isPrimary && <StatusPill tone="info">{t("portal.bank.primaryBadge")}</StatusPill>}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <ReadField label={t("portal.bank.accountNo")} value={b.accountNo} />
+              <ReadField label={t("portal.bank.holderName")} value={b.holderName} />
+              <ReadField label={t("portal.bank.branch")} value={b.branch} />
+              <ReadField label={t("portal.bank.swift")} value={b.swift} />
+              <ReadField label={t("portal.bank.currency")} value={currencyCodes(b.currencyIds)} />
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Activity tab — the audit trail scoped to this vendor (M1.4, #23). Rendered only with `audit:view`. */
+function ActivityTab({ vendorId }: { vendorId: string }) {
+  const { locale } = useLocale();
+  const t = useT();
+  const [rows, setRows] = useState<AuditRowDTO[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setRows(null);
+    setError(false);
+    auditApi
+      .forVendor(locale, vendorId)
+      .then((r) => {
+        if (alive) setRows(r);
+      })
+      .catch(() => {
+        if (alive) setError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [locale, vendorId]);
+
+  const timeFmt = useMemo(
+    () => new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }),
+    [locale],
+  );
+
+  if (error)
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          {t("console.vendorProfile.loadError")}
+        </CardContent>
+      </Card>
+    );
+  if (rows === null)
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          {t("portal.common.loading")}
+        </CardContent>
+      </Card>
+    );
+
+  return (
+    <Card>
+      <CardContent className="py-5">
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t("console.vendorProfile.noActivity")}</p>
+        ) : (
+          <ol className="flex flex-col gap-3">
+            {rows.map((row) => (
+              <li key={row.id} className="flex gap-3">
+                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                <div className="flex-1 border-b border-border pb-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <code className="rounded bg-secondary px-1.5 py-0.5 text-xs">{row.action}</code>
+                    <span className="text-xs text-muted-foreground">
+                      {timeFmt.format(new Date(row.at))}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {row.actorName ?? row.actorEmail ?? t("audit.system")}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
       </CardContent>
     </Card>
   );
