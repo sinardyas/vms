@@ -1,5 +1,5 @@
 import { boolean, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
-import { userKindEnum } from "./enums";
+import { localeEnum, userKindEnum } from "./enums";
 
 // Identity (ADR-0004). One users table with a `kind`; credentials/sessions via better-auth
 // companion tables (ADR-0015). Portal vs Console authorization is by RBAC, not separate stacks.
@@ -14,6 +14,14 @@ export const users = pgTable(
     name: varchar({ length: 200 }).notNull(),
     image: text(),
     active: boolean().notNull().default(true),
+    /**
+     * The language this user reads — what their notifications and correspondence render in (M6.1,
+     * ADR-0008/0012). Distinct from `RequestContext.locale`, which is the *acting* request's
+     * language: the two differ precisely when one person's action notifies another. Defaults to
+     * `id` (ADR-0008's default locale), so an account created before the preference is captured
+     * still has a well-defined language and the column can be `NOT NULL`.
+     */
+    locale: localeEnum().notNull().default("id"),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },

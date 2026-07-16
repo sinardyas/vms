@@ -1266,6 +1266,85 @@ export const catalogue = {
     id: "Tindakan tidak dapat diselesaikan.",
     en: "The action couldn't be completed.",
   },
+
+  // --- Notification templates (M6.1, #77, ADR-0012) ---
+  // One template per event type, rendered in the **recipient's** locale (`users.locale`), not the
+  // acting request's. Interpolated at send time: `{name}` (recipient), `{vendorName}`, `{reason}`,
+  // `{documentName}`, `{roleName}`. `email_verify` is absent by design — it reuses the M1.1
+  // `auth.email.verify.*` keys above so the two renderings can't drift once M6.2 re-points it.
+  // Each event has a `subject` (email), a shorter `title` (the M6.3 in-app row), a `body` and a `cta`.
+
+  // Approval decision → vendor. Approved and rejected read nothing alike, so they're separate copy.
+  "notify.decision.approved.subject": {
+    id: "Pendaftaran vendor Anda telah disetujui — Soechi VMS",
+    en: "Your vendor registration is approved — Soechi VMS",
+  },
+  "notify.decision.approved.title": { id: "Pendaftaran disetujui", en: "Registration approved" },
+  "notify.decision.approved.body": {
+    id: "Halo {name}, pendaftaran {vendorName} telah disetujui dan akun vendor Anda kini aktif. Anda dapat masuk untuk melihat data vendor Anda.",
+    en: "Hi {name}, the registration for {vendorName} has been approved and your vendor account is now active. You can sign in to view your vendor record.",
+  },
+  "notify.decision.approved.cta": { id: "Buka portal vendor", en: "Open the vendor portal" },
+  "notify.decision.rejected.subject": {
+    id: "Pendaftaran vendor Anda perlu diperbaiki — Soechi VMS",
+    en: "Your vendor registration needs changes — Soechi VMS",
+  },
+  "notify.decision.rejected.title": { id: "Pendaftaran ditolak", en: "Registration rejected" },
+  "notify.decision.rejected.body": {
+    id: "Halo {name}, pendaftaran {vendorName} dikembalikan ke Draft dengan alasan berikut: {reason}. Silakan perbaiki dan kirim ulang.",
+    en: "Hi {name}, the registration for {vendorName} was returned to Draft for this reason: {reason}. Please correct it and submit again.",
+  },
+  "notify.decision.rejected.cta": { id: "Lanjutkan pendaftaran", en: "Resume registration" },
+
+  // Document rejected → vendor. A mandatory doc bounces the registration to Draft (M5.3); an
+  // optional one doesn't — the copy must not imply a move that didn't happen.
+  "notify.docRejected.mandatory.subject": {
+    id: "Dokumen wajib ditolak — tindakan diperlukan — Soechi VMS",
+    en: "A required document was rejected — action needed — Soechi VMS",
+  },
+  "notify.docRejected.mandatory.title": {
+    id: "Dokumen wajib ditolak",
+    en: "Required document rejected",
+  },
+  "notify.docRejected.mandatory.body": {
+    id: "Halo {name}, dokumen {documentName} untuk {vendorName} ditolak dengan alasan: {reason}. Karena dokumen ini wajib, pendaftaran Anda dikembalikan ke Draft — silakan unggah ulang dokumen yang benar lalu kirim ulang.",
+    en: "Hi {name}, the {documentName} for {vendorName} was rejected for this reason: {reason}. Because this document is required, your registration has been returned to Draft — please upload a corrected copy and submit again.",
+  },
+  "notify.docRejected.mandatory.cta": { id: "Unggah ulang dokumen", en: "Re-upload the document" },
+  "notify.docRejected.optional.subject": {
+    id: "Dokumen ditolak — Soechi VMS",
+    en: "A document was rejected — Soechi VMS",
+  },
+  "notify.docRejected.optional.title": { id: "Dokumen ditolak", en: "Document rejected" },
+  "notify.docRejected.optional.body": {
+    id: "Halo {name}, dokumen {documentName} untuk {vendorName} ditolak dengan alasan: {reason}. Dokumen ini tidak wajib, sehingga pendaftaran Anda tetap berjalan.",
+    en: "Hi {name}, the {documentName} for {vendorName} was rejected for this reason: {reason}. This document isn't required, so your registration is unaffected.",
+  },
+  "notify.docRejected.optional.cta": { id: "Lihat dokumen", en: "View the document" },
+
+  // Step assigned → approver (internal; ADR-0012 auto-assign to the role lead).
+  "notify.stepAssigned.subject": {
+    id: "Persetujuan menunggu Anda — Soechi VMS",
+    en: "An approval is waiting for you — Soechi VMS",
+  },
+  "notify.stepAssigned.title": { id: "Persetujuan ditugaskan", en: "Approval assigned" },
+  "notify.stepAssigned.body": {
+    id: "Halo {name}, langkah persetujuan {roleName} untuk {vendorName} telah ditugaskan kepada Anda. Anda dapat memutuskan sendiri atau mendelegasikannya kepada rekan yang berwenang.",
+    en: "Hi {name}, the {roleName} approval step for {vendorName} has been assigned to you. You can decide it yourself or delegate it to an eligible colleague.",
+  },
+  "notify.stepAssigned.cta": { id: "Tinjau permintaan", en: "Review the request" },
+
+  // Office invite → vendor owner, on activation of an office-registered vendor (ADR-0004).
+  "notify.officeInvite.subject": {
+    id: "Akun vendor Anda telah dibuat — Soechi VMS",
+    en: "Your vendor account is ready — Soechi VMS",
+  },
+  "notify.officeInvite.title": { id: "Undangan akun vendor", en: "Vendor account invitation" },
+  "notify.officeInvite.body": {
+    id: "Halo {name}, tim Soechi telah mendaftarkan {vendorName} atas nama Anda dan pendaftaran tersebut kini aktif. Gunakan tautan di bawah untuk membuat kata sandi dan mengakses portal vendor.",
+    en: "Hi {name}, the Soechi team registered {vendorName} on your behalf and that registration is now active. Use the link below to set a password and access the vendor portal.",
+  },
+  "notify.officeInvite.cta": { id: "Aktifkan akun Anda", en: "Set up your account" },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */
