@@ -529,6 +529,13 @@ export const catalogue = {
     id: "Gagal menyimpan berkas.",
     en: "Failed to store the file.",
   },
+
+  // --- Compliance document capture (M3.3, #44, ADR-0011/0013) ---
+  // Upload named a document type that isn't in the Document Master.
+  "error.document.masterUnknown": {
+    id: "Tipe dokumen tidak dikenal.",
+    en: "Unknown document type.",
+  },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */
