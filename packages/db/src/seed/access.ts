@@ -133,10 +133,12 @@ export const ROLE_SEED: readonly RoleSeed[] = [
     nameId: "Vendor",
     nameEn: "Vendor",
     // The vendor owner (portal). Manages their own vendor record + documents; reads registration
-    // lists (categories/banks/entities) to fill the form. Own-vendor scoping is M1.3 enforcement.
+    // lists (categories/banks/entities) to fill the form. `delete` covers Draft self-correction —
+    // removing a mistakenly-added bank account or document slot — always own-vendor-scoped by the
+    // M3.5 ownership guard (a vendor may only touch their own vendorId). Own-vendor scoping is M3.5.
     grants: {
-      vendors: ["add", "edit", "view"],
-      documents: ["add", "edit", "view"],
+      vendors: ["add", "edit", "view", "delete"],
+      documents: ["add", "edit", "view", "delete"],
       registration_lists: ["view"],
     },
   },
