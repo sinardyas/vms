@@ -1048,9 +1048,21 @@ export const catalogue = {
     id: "Verifikasi dokumen",
     en: "Document verification",
   },
-  "console.approvals.detail.verificationSoon": {
-    id: "Kemajuan verifikasi dokumen akan tampil di sini pada M5.",
-    en: "Document-verification progress lands here in M5.",
+  "console.approvals.detail.verifiedCount": {
+    id: "{n} dari {total} dokumen wajib terverifikasi",
+    en: "{n} of {total} mandatory documents verified",
+  },
+  "console.approvals.detail.verificationComplete": {
+    id: "Semua dokumen wajib terverifikasi — siap diaktifkan.",
+    en: "All mandatory documents verified — ready to activate.",
+  },
+  "console.approvals.detail.verificationBlocked": {
+    id: "{n} dokumen masih menunggu verifikasi sebelum aktivasi.",
+    en: "{n} document(s) still awaiting verification before activation.",
+  },
+  "console.approvals.detail.verificationNone": {
+    id: "Tidak ada dokumen wajib untuk vendor ini.",
+    en: "No mandatory documents required for this vendor.",
   },
   "console.approvals.step.awaiting": { id: "Menunggu keputusan", en: "Awaiting decision" },
   "console.approvals.step.by": { id: "oleh {name}", en: "by {name}" },
@@ -1156,6 +1168,86 @@ export const catalogue = {
   "console.vendorProfile.changeBankHolderNote": {
     id: "Rekening baru harus atas nama perusahaan — lampiran baru tidak dapat diunggah saat mengajukan perubahan.",
     en: "A new account must be held by the company — new attachments can't be uploaded when raising a change.",
+  },
+
+  // Vendor profile — per-document verification state (M5.4, #71)
+  "console.vendorProfile.docRejectReason": {
+    id: "Ditolak: {reason}",
+    en: "Rejected: {reason}",
+  },
+  "console.vendorProfile.docExpires": { id: "Berlaku s.d. {date}", en: "Expires {date}" },
+
+  // Document Verification — the verifier's queue + per-document actions (M5.4, #71, ADR-0007/0013)
+  "console.verification.title": { id: "Verifikasi Dokumen", en: "Document Verification" },
+  "console.verification.subtitle": {
+    id: "Tinjau dokumen kepatuhan vendor yang sedang ditinjau (Pending) dan verifikasi atau tolak setiap dokumen.",
+    en: "Review compliance documents for vendors under review (Pending) and verify or reject each one.",
+  },
+  "console.verification.refresh": { id: "Muat ulang", en: "Refresh" },
+  "console.verification.loading": { id: "Memuat…", en: "Loading…" },
+  "console.verification.loadError": {
+    id: "Antrean verifikasi gagal dimuat. Coba muat ulang.",
+    en: "The verification queue failed to load. Try refreshing.",
+  },
+  "console.verification.empty": {
+    id: "Tidak ada dokumen yang menunggu verifikasi.",
+    en: "No documents are awaiting verification.",
+  },
+  "console.verification.col.vendor": { id: "Vendor", en: "Vendor" },
+  "console.verification.col.document": { id: "Dokumen", en: "Document" },
+  "console.verification.col.version": { id: "Versi", en: "Version" },
+  "console.verification.col.uploaded": { id: "Diunggah", en: "Uploaded" },
+  "console.verification.badge.mandatory": { id: "Wajib", en: "Mandatory" },
+  "console.verification.badge.optional": { id: "Opsional", en: "Optional" },
+  "console.verification.versionNo": { id: "v{n}", en: "v{n}" },
+  "console.verification.refNo": { id: "No. ref: {ref}", en: "Ref no: {ref}" },
+  "console.verification.variant": { id: "Jenis: {variant}", en: "Variant: {variant}" },
+  "console.verification.action.view": { id: "Lihat dokumen", en: "View document" },
+  "console.verification.action.verify": { id: "Verifikasi", en: "Verify" },
+  "console.verification.action.reject": { id: "Tolak", en: "Reject" },
+  "console.verification.action.cancel": { id: "Batal", en: "Cancel" },
+  "console.verification.action.close": { id: "Tutup", en: "Close" },
+  "console.verification.viewError": {
+    id: "Dokumen tidak dapat dibuka. Coba lagi.",
+    en: "The document couldn't be opened. Try again.",
+  },
+  "console.verification.verify.title": { id: "Verifikasi dokumen ini", en: "Verify this document" },
+  "console.verification.verify.hint": {
+    id: "Catat tanggal terbit dan kedaluwarsa sertifikat jika ada (opsional).",
+    en: "Record the certificate's issue and expiry dates if available (optional).",
+  },
+  "console.verification.verify.issued": {
+    id: "Tanggal terbit (opsional)",
+    en: "Issue date (optional)",
+  },
+  "console.verification.verify.expires": {
+    id: "Tanggal kedaluwarsa (opsional)",
+    en: "Expiry date (optional)",
+  },
+  "console.verification.verify.dateError": {
+    id: "Tanggal kedaluwarsa harus sama dengan atau setelah tanggal terbit.",
+    en: "Expiry must be on or after the issue date.",
+  },
+  "console.verification.verify.confirm": { id: "Verifikasi dokumen", en: "Verify document" },
+  "console.verification.reject.title": { id: "Tolak dokumen ini", en: "Reject this document" },
+  "console.verification.reject.reason": {
+    id: "Alasan penolakan (wajib)",
+    en: "Rejection reason (required)",
+  },
+  "console.verification.reject.mandatoryNote": {
+    id: "Menolak dokumen wajib ini akan mengembalikan pendaftaran vendor ke Draft untuk diunggah ulang.",
+    en: "Rejecting this mandatory document returns the vendor's registration to Draft for re-upload.",
+  },
+  "console.verification.reject.confirm": { id: "Tolak dokumen", en: "Reject document" },
+  "console.verification.toast.verified": { id: "Dokumen diverifikasi.", en: "Document verified." },
+  "console.verification.toast.rejected": { id: "Dokumen ditolak.", en: "Document rejected." },
+  "console.verification.toast.returnedToDraft": {
+    id: "Vendor dikembalikan ke Draft untuk mengunggah ulang dokumen.",
+    en: "Vendor returned to Draft to re-upload the document.",
+  },
+  "console.verification.toast.error": {
+    id: "Tindakan tidak dapat diselesaikan.",
+    en: "The action couldn't be completed.",
   },
 } as const satisfies Record<string, MessageEntry>;
 
