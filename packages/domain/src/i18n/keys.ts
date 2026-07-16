@@ -401,6 +401,53 @@ export const catalogue = {
   "docMaster.matrix.legend.mandatory": { id: "W = Wajib", en: "M = Mandatory" },
   "docMaster.matrix.legend.optional": { id: "O = Opsional", en: "O = Optional" },
   "docMaster.matrix.legend.none": { id: "— = Tidak diperlukan", en: "— = Not required" },
+
+  // --- Approval triggers (ADR-0005, 0009) — what an ApprovalRequest / route is about. ---
+  "enum.approvalTrigger.new_vendor_registration": {
+    id: "Pendaftaran Vendor Baru (Mandiri)",
+    en: "New Vendor Registration (Self)",
+  },
+  "enum.approvalTrigger.office_vendor_registration": {
+    id: "Pendaftaran Vendor oleh Kantor",
+    en: "Office Vendor Registration",
+  },
+  "enum.approvalTrigger.bank_change": { id: "Perubahan Bank", en: "Bank Change" },
+  "enum.approvalTrigger.non_bank_change": {
+    id: "Perubahan Data Non-Bank",
+    en: "Non-Bank Change",
+  },
+  "enum.approvalTrigger.reactivation": { id: "Reaktivasi Vendor", en: "Vendor Reactivation" },
+
+  // --- Approval Routes console (M2.4, #35, ADR-0009/0011) — the trigger→ordered-steps routing table. ---
+  "approvalRoutes.title": { id: "Rute Persetujuan", en: "Approval Routes" },
+  "approvalRoutes.subtitle": {
+    id: "Tabel rute yang diselesaikan mesin alur kerja berdasarkan pemicu. Setiap langkah memberi keputusan pada satu peran; menyimpan rute yang menyisakan langkah tanpa penyetuju yang memenuhi syarat akan diperingatkan.",
+    en: "The routing table the workflow engine resolves by trigger. Each step is decided by one role; saving a route that leaves a step with no eligible approver is warned.",
+  },
+  "approvalRoutes.col.trigger": { id: "Pemicu", en: "Trigger" },
+  "approvalRoutes.col.name": { id: "Nama Rute", en: "Route name" },
+  "approvalRoutes.col.steps": { id: "Langkah (berurutan)", en: "Steps (in order)" },
+  "approvalRoutes.stepsNone": { id: "Belum ada langkah", en: "No steps yet" },
+  "approvalRoutes.editSteps": { id: "Ubah langkah", en: "Edit steps" },
+  "approvalRoutes.stepsTitle": { id: "Langkah untuk {route}", en: "Steps for {route}" },
+  "approvalRoutes.stepN": { id: "Langkah {n}", en: "Step {n}" },
+  "approvalRoutes.stepRole": { id: "Peran penyetuju", en: "Approver role" },
+  "approvalRoutes.addStep": { id: "Tambah langkah", en: "Add step" },
+  "approvalRoutes.removeStep": { id: "Hapus", en: "Remove" },
+  "approvalRoutes.moveUp": { id: "Naik", en: "Move up" },
+  "approvalRoutes.moveDown": { id: "Turun", en: "Move down" },
+  "approvalRoutes.rolePlaceholder": { id: "— Pilih peran —", en: "— Select role —" },
+  "approvalRoutes.needStep": {
+    id: "Rute butuh minimal satu langkah.",
+    en: "A route needs at least one step.",
+  },
+  // Deadlock guard on save (ADR-0011): a step whose role has no eligible approver strands the route.
+  "approvalRoutes.deadlock.warning": {
+    id: "Menyimpan rute ini menyisakan peran langkah tanpa penyetuju aktif yang memenuhi syarat: {roles}. Rute tidak dapat diselesaikan sampai peran itu memiliki penyetuju. Tetap simpan?",
+    en: "Saving this route leaves step role(s) with no eligible active approver: {roles}. The route can't be resolved until those roles have an approver. Save anyway?",
+  },
+  "approvalRoutes.deadlock.confirm": { id: "Tetap simpan", en: "Save anyway" },
+  "approvalRoutes.deadlock.title": { id: "Peringatan kebuntuan", en: "Deadlock warning" },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */
