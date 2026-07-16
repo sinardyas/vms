@@ -37,6 +37,7 @@ import { AuditLog } from "./features/audit-log";
 import { DocumentMaster } from "./features/document-master";
 import { OperationalLists } from "./features/operational-lists";
 import { RegistrationLists } from "./features/registration-lists";
+import { Vendors } from "./features/vendors";
 import { loadCapabilities } from "./lib/api";
 
 /**
@@ -167,6 +168,8 @@ function Console() {
     >
       {showGallery ? (
         <Gallery />
+      ) : current === "vendors" ? (
+        <Vendors />
       ) : current === "audit" ? (
         <AuditLog />
       ) : current === "access" ? (
