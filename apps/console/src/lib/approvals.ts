@@ -53,12 +53,26 @@ export type ApprovalRequestSummaryDTO = {
   createdAt: string;
 };
 
+/**
+ * The M5.2 activation gate for a **registration** request (#69) — "N of M mandatory docs Verified" plus
+ * the outstanding master ids final-approve is waiting on (ADR-0013). The console renders it on the detail
+ * (M5.4); `null` for an edit request, where nothing activates.
+ */
+export type ActivationGateDTO = {
+  ok: boolean;
+  requiredCount: number;
+  verifiedCount: number;
+  blockers: string[];
+};
+
 /** A request opened in detail — the summary, its ordered steps, and (for an edit) the proposed diff. */
 export type ApprovalRequestDetailDTO = ApprovalRequestSummaryDTO & {
   routeId: string;
   resolvedAt: string | null;
   payload: VendorChangeInput | null;
   steps: ApprovalStepDTO[];
+  /** The M5.2 gate status for a registration request; `null` for a post-activation edit. */
+  activationGate: ActivationGateDTO | null;
 };
 
 /** A user the delegate/reassign picker offers (holds the step's role). */
