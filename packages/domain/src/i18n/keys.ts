@@ -503,6 +503,32 @@ export const catalogue = {
   },
   "approvalRoutes.deadlock.confirm": { id: "Tetap simpan", en: "Save anyway" },
   "approvalRoutes.deadlock.title": { id: "Peringatan kebuntuan", en: "Deadlock warning" },
+
+  // --- Bank accounts + attachments (M3.2, #43, ADR-0013) ---
+  // Holder-proof invariant: when the account holder is not the company, KTP + surat are required.
+  "error.bank.holderProofRequired": {
+    id: "Pemilik rekening bukan perusahaan: KTP pemilik dan surat pernyataan wajib dilampirkan.",
+    en: "The account holder is not the company: the holder's KTP and a surat pernyataan are required.",
+  },
+  // Out-of-country account: a remark is required when the bank's country differs from the vendor's.
+  "error.bank.countryRemarkRequired": {
+    id: "Negara bank berbeda dari negara vendor: keterangan wajib diisi.",
+    en: "The bank's country differs from the vendor's: a remark is required.",
+  },
+  // Upload validation (validated, not gated).
+  "error.file.badType": {
+    id: "Tipe berkas tidak didukung. Diperbolehkan: {allowed}.",
+    en: "Unsupported file type. Allowed: {allowed}.",
+  },
+  "error.file.empty": { id: "Berkas kosong.", en: "The file is empty." },
+  "error.file.tooLarge": {
+    id: "Ukuran berkas melebihi batas {maxMb} MB.",
+    en: "The file exceeds the {maxMb} MB limit.",
+  },
+  "error.file.storeFailed": {
+    id: "Gagal menyimpan berkas.",
+    en: "Failed to store the file.",
+  },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */
