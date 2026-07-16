@@ -73,6 +73,7 @@ const detail: ApprovalRequestDetailDTO = {
       isOverride: false,
     },
   ],
+  activationGate: { ok: true, requiredCount: 2, verifiedCount: 2, blockers: [] },
 };
 
 type Spy = {
@@ -269,6 +270,26 @@ describe("POST /:id/approve", () => {
       json("POST", {}),
     );
     expect(res.status).toBe(404);
+  });
+
+  test("blocked activation gate (M5.2) → 409 with the localized N-of-M count", async () => {
+    // The blockers themselves reach the console via the `activationGate` read on the request detail;
+    // the block error carries the localized "N of M verified" message (params).
+    const store = fakeStore({
+      decide: async () => ({
+        ok: false,
+        reason: "gate_blocked",
+        gate: { ok: false, requiredCount: 3, verifiedCount: 1, blockers: ["doc-b", "doc-c"] },
+      }),
+    });
+    const res = await mount(() => actor(["approve"]), store).request(
+      `/console/approvals/${REQ}/approve`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { messageKey: string; params: unknown } };
+    expect(body.error.messageKey).toBe("error.approval.activationGateBlocked");
+    expect(body.error.params).toEqual({ verified: 1, required: 3 });
   });
 });
 

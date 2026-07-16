@@ -643,6 +643,14 @@ export const catalogue = {
     en: "This vendor already has a change awaiting approval — resolve it first.",
   },
 
+  // --- Activation gate (M5.2, #69, ADR-0013/0014) ---
+  // Final-approval can't activate: not every mandatory document is Verified yet ({verified} of
+  // {required}). The outstanding document-master ids ride in `details`; M5.4 resolves their names.
+  "error.approval.activationGateBlocked": {
+    id: "Belum dapat diaktifkan — baru {verified} dari {required} dokumen wajib yang terverifikasi.",
+    en: "Can't activate yet — only {verified} of {required} mandatory documents are verified.",
+  },
+
   // --- Post-activation edits (M4.5, #60, ADR-0005/0009) ---
   // A change request was raised on a vendor that isn't Active — only an Active vendor's edits re-approve
   // (a Draft edits in place; a Pending vendor is frozen under its registration review).

@@ -19,8 +19,9 @@
  * **Scope boundary (M4.2):** deciding is gated only by RBAC (`approvals:approve`) here. Separation of
  * duties (no self-approval, verifier ≠ approver) and the zero-eligible → admin-override escalation are
  * **M4.3** — the eligibility primitive ({@link approverIneligibility}, M1.6) plugs in at the decide
- * handler. Registration final-approval activates the vendor **unconditionally**; **M5.2** inserts the
- * all-mandatory-docs-Verified activation gate at the `activate` effect below.
+ * handler. The **M5.2** activation gate is now in place: a registration final-approve blocks (409, no
+ * write) unless every mandatory doc is Verified ({@link computeActivationGate}, ADR-0013); the same gate
+ * status rides on the request detail so the console shows "N of M verified" before an approver decides.
  *
  * Stores are injectable so the whole surface is testable without Postgres; the router is mounted at
  * `/console/approvals` (internal console), RBAC-gated on the `approvals` module, every mutation audited.
@@ -30,20 +31,30 @@ import {
   type DB,
   approvalRequestSteps,
   approvalRequests,
+  categoryDocumentRequirements,
   db as defaultDb,
+  documentMaster,
+  documentSlots,
+  documentVersions,
   roles,
   userRoles,
   users,
   vendors,
 } from "@vms/db";
 import {
+  type ActivationGate,
   type ApprovalDecision,
   type RequestContext,
   type StepDecision,
+  type VerifiableDocument,
+  activationGate,
+  activationGateError,
   applyDecision,
   conflictError,
+  isEditTrigger,
   notFoundError,
   parseWith,
+  requiredDocumentSet,
   validationError,
 } from "@vms/domain";
 import { and, asc, eq, inArray } from "drizzle-orm";
@@ -103,6 +114,12 @@ export type ApprovalRequestDetailDTO = ApprovalRequestSummaryDTO & {
   /** The proposed diff for a post-activation edit (M4.5); `null` for a registration request. */
   readonly payload: unknown;
   readonly steps: ApprovalStepDTO[];
+  /**
+   * The M5.2 activation gate for a **registration** request — "N of M mandatory docs Verified" + the
+   * blockers final-approve is waiting on (ADR-0013). `null` for an edit request (nothing activates), so
+   * the console (M5.4) renders it only where it applies.
+   */
+  readonly activationGate: ActivationGate | null;
 };
 
 /** A user who could take a step — a candidate the delegate/reassign picker offers (holds the step's role). */
@@ -135,10 +152,15 @@ export type DecideInput = {
   readonly reason: string | null;
 };
 
-/** Decide outcome: applied (fresh detail), or why it couldn't be — unknown / already resolved. */
+/**
+ * Decide outcome: applied (fresh detail), or why it couldn't be — unknown request, already resolved,
+ * or (M5.2) a registration final-approve blocked because not every mandatory doc is Verified yet. The
+ * `gate` rides along so the route can localize the "N of M verified" message the block carries.
+ */
 export type DecideOutcome =
   | { readonly ok: true; readonly detail: ApprovalRequestDetailDTO }
-  | { readonly ok: false; readonly reason: "not_found" | "not_pending" };
+  | { readonly ok: false; readonly reason: "not_found" | "not_pending" }
+  | { readonly ok: false; readonly reason: "gate_blocked"; readonly gate: ActivationGate };
 
 /** Reassign/delegate an open step's assignee. */
 export type ReassignInput = {
@@ -231,6 +253,68 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
       .where(eq(approvalRequestSteps.requestId, requestId))
       .orderBy(asc(approvalRequestSteps.stepNo));
 
+  /**
+   * The M5.2 activation gate for a vendor: is every mandatory doc Verified? Composes the required set
+   * (origin ∪ single-category, the same matrix the M3.4 submit gate reads) then measures each slot's
+   * current-version verify state against it. Pure judgement lives in `@vms/domain`
+   * ({@link activationGate}); this only gathers the data. Reused by the `activate` block in `decide` and
+   * by `buildDetail` (so the console can show the gate before an approver decides).
+   */
+  const computeActivationGate = async (
+    handle: ReadHandle,
+    vendorId: string,
+  ): Promise<ActivationGate> => {
+    const [vendor] = await handle
+      .select({ origin: vendors.origin, categoryId: vendors.categoryId })
+      .from(vendors)
+      .where(eq(vendors.id, vendorId))
+      .limit(1);
+    if (!vendor) return activationGate([], []); // vendor gone — decide already guards existence
+
+    // Required set = origin docs ∪ this category's docs (ADR-0013), composed from the matrix.
+    const masterRows = await handle
+      .select({
+        id: documentMaster.id,
+        appliesTo: documentMaster.appliesTo,
+        mandatory: documentMaster.mandatory,
+        enabled: documentMaster.enabled,
+      })
+      .from(documentMaster);
+    const requirementRows = await handle
+      .select({
+        categoryId: categoryDocumentRequirements.categoryId,
+        documentMasterId: categoryDocumentRequirements.documentMasterId,
+        mandatory: categoryDocumentRequirements.mandatory,
+        active: categoryDocumentRequirements.active,
+        enabled: documentMaster.enabled,
+      })
+      .from(categoryDocumentRequirements)
+      .innerJoin(
+        documentMaster,
+        eq(categoryDocumentRequirements.documentMasterId, documentMaster.id),
+      );
+    const requiredDocMasterIds = requiredDocumentSet(
+      { origin: vendor.origin, categoryId: vendor.categoryId },
+      { master: masterRows, categoryRequirements: requirementRows },
+    );
+
+    // Each slot's current version's verify state — a missing version (left-join null) reads as not-yet.
+    const slotRows = await handle
+      .select({
+        documentMasterId: documentSlots.documentMasterId,
+        currentVersionStatus: documentVersions.verifyStatus,
+      })
+      .from(documentSlots)
+      .leftJoin(documentVersions, eq(documentVersions.id, documentSlots.currentVersionId))
+      .where(eq(documentSlots.vendorId, vendorId));
+    const docs: VerifiableDocument[] = slotRows.map((s) => ({
+      documentMasterId: s.documentMasterId,
+      currentVersionStatus: s.currentVersionStatus ?? null,
+    }));
+
+    return activationGate(requiredDocMasterIds, docs);
+  };
+
   /** Assemble the detail DTO (request row + ordered steps). `null` if the request is gone. */
   const buildDetail = async (
     handle: ReadHandle,
@@ -240,6 +324,10 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
     if (!row) return null;
     const steps = await loadSteps(handle, requestId);
     const current = steps.find((s) => s.stepNo === row.currentStepNo);
+    // Registration requests carry the activation gate (M5.2); an edit request has nothing to activate.
+    const gate = isEditTrigger(row.trigger)
+      ? null
+      : await computeActivationGate(handle, row.subjectVendorId);
     return {
       id: row.id,
       subjectVendorId: row.subjectVendorId,
@@ -273,6 +361,7 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         decidedAt: iso(s.decidedAt),
         isOverride: s.isOverride,
       })),
+      activationGate: gate,
     };
   };
 
@@ -354,6 +443,14 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         const outcome = applyDecision(row.currentStepNo, steps.length, input.decision, row.trigger);
         const now = new Date();
 
+        // 0. Activation gate (M5.2, ADR-0013): a registration final-approve may only activate once every
+        // mandatory doc is Verified. Check *before* any write, so a blocked gate leaves the request wholly
+        // untouched (no step recorded, still Pending) — the approver retries after the docs are verified.
+        if (outcome.subjectEffect === "activate") {
+          const gate = await computeActivationGate(tx, row.subjectVendorId);
+          if (!gate.ok) return { ok: false, reason: "gate_blocked", gate };
+        }
+
         // 1. Record the decision on the current step.
         await tx
           .update(approvalRequestSteps)
@@ -398,7 +495,7 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         // Draft. Edit (M4.5): final approve → apply the diff to the still-Active vendor + clear the flag;
         // reject → discard the diff + clear the flag (the vendor is untouched either way).
         if (outcome.subjectEffect === "activate") {
-          // M5.2 inserts the activation gate here (block until all mandatory docs are Verified).
+          // The M5.2 gate above already cleared this activation (all mandatory docs Verified).
           await tx
             .update(vendors)
             .set({ status: "active", updatedAt: now })
@@ -599,9 +696,11 @@ export const approvalRoutes = (store: ApprovalStore = drizzleApprovalStore()): H
       reason,
     });
     if (!outcome.ok) {
-      return outcome.reason === "not_found"
-        ? sendError(c, notFoundError())
-        : sendError(c, conflictError({ messageKey: "error.approval.notPending" }));
+      if (outcome.reason === "not_found") return sendError(c, notFoundError());
+      // M5.2: a registration final-approve blocked because not every mandatory doc is Verified — a 409
+      // carrying the localized "N of M verified" + the outstanding master ids (details).
+      if (outcome.reason === "gate_blocked") return sendError(c, activationGateError(outcome.gate));
+      return sendError(c, conflictError({ messageKey: "error.approval.notPending" }));
     }
     return c.json({ item: outcome.detail });
   };
