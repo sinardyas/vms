@@ -841,6 +841,72 @@ export const catalogue = {
     en: "Register another vendor",
   },
   "console.vendorReg.backToStart": { id: "Batalkan", en: "Cancel" },
+
+  // --- Console vendor list + profile (M3.7, #48) — browse vendors, read-only profile tabs ---
+  "console.vendorList.title": { id: "Vendor", en: "Vendors" },
+  "console.vendorList.subtitle": {
+    id: "Master & kategorisasi vendor. Vendor dalam & luar negeri membawa set dokumen berbeda.",
+    en: "Vendor master & categorization. Local and foreign vendors carry different document sets.",
+  },
+  "console.vendorList.searchPlaceholder": {
+    id: "Cari vendor — nama, kategori, negara, NPWP, status…",
+    en: "Search vendors — name, category, country, tax ID, status…",
+  },
+  "console.vendorList.colVendor": { id: "Vendor", en: "Vendor" },
+  "console.vendorList.colCountry": { id: "Negara", en: "Country" },
+  "console.vendorList.colCategory": { id: "Kategori", en: "Category" },
+  "console.vendorList.colTaxId": { id: "NPWP / Tax ID", en: "Tax ID" },
+  "console.vendorList.colStatus": { id: "Status", en: "Status" },
+  "console.vendorList.empty": {
+    id: "Belum ada vendor terdaftar.",
+    en: "No vendors registered yet.",
+  },
+  "console.vendorList.noResults": {
+    id: "Tidak ada vendor yang cocok dengan pencarian.",
+    en: "No vendors match your search.",
+  },
+  "console.vendorList.loadError": {
+    id: "Gagal memuat daftar vendor.",
+    en: "Failed to load the vendor list.",
+  },
+  "console.vendorList.backToList": { id: "Kembali ke daftar", en: "Back to vendors" },
+  "console.vendorList.sourceSelf": {
+    id: "Pendaftaran mandiri",
+    en: "Self-registered",
+  },
+  "console.vendorList.sourceOffice": {
+    id: "Didaftarkan oleh kantor",
+    en: "Office-registered",
+  },
+  "console.vendorProfile.tabDetails": { id: "Detail", en: "Details" },
+  "console.vendorProfile.tabDocuments": { id: "Dokumen", en: "Documents" },
+  "console.vendorProfile.tabBank": { id: "Bank", en: "Bank" },
+  "console.vendorProfile.tabActivity": { id: "Aktivitas", en: "Activity" },
+  "console.vendorProfile.loadError": {
+    id: "Gagal memuat data vendor.",
+    en: "Failed to load vendor data.",
+  },
+  "console.vendorProfile.noDocuments": {
+    id: "Tidak ada dokumen wajib untuk vendor ini.",
+    en: "No required documents for this vendor.",
+  },
+  "console.vendorProfile.docCaptured": { id: "Terunggah", en: "Uploaded" },
+  "console.vendorProfile.docMissing": { id: "Belum diunggah", en: "Not uploaded" },
+  "console.vendorProfile.docVersion": { id: "Versi {n}", en: "Version {n}" },
+  "console.vendorProfile.docPreview": { id: "Pratinjau", en: "Preview" },
+  "console.vendorProfile.noBanks": {
+    id: "Belum ada rekening bank.",
+    en: "No bank accounts yet.",
+  },
+  "console.vendorProfile.noActivity": {
+    id: "Belum ada aktivitas tercatat untuk vendor ini.",
+    en: "No activity recorded for this vendor yet.",
+  },
+
+  // --- Portal read-only status view (M3.7, #48) — "where's my registration?" ---
+  "portal.status.summaryTitle": { id: "Ringkasan pendaftaran", en: "Registration summary" },
+  "portal.status.docsTitle": { id: "Dokumen", en: "Documents" },
+  "portal.status.banksTitle": { id: "Rekening bank", en: "Bank accounts" },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */
