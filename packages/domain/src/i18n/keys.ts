@@ -536,6 +536,33 @@ export const catalogue = {
     id: "Tipe dokumen tidak dikenal.",
     en: "Unknown document type.",
   },
+
+  // --- Shared submit gate (M3.4, #45, ADR-0004) — surfaced by the portal + office API alike. ---
+  // Top-level 422 when a Draft isn't complete enough to submit; per-blocker details ride in `details`.
+  "error.vendor.notSubmittable": {
+    id: "Pendaftaran belum dapat dikirim — sebagian data wajib masih kurang.",
+    en: "The registration can't be submitted yet — some required information is missing.",
+  },
+  // A required profile field is empty at submit (the field is named by the issue's `path`).
+  "error.vendor.fieldRequired": {
+    id: "Kolom ini wajib diisi sebelum mengirim.",
+    en: "This field is required before submitting.",
+  },
+  // A vendor must have at least one bank account to be submitted (so it is payable once active).
+  "error.vendor.bankRequired": {
+    id: "Minimal satu rekening bank wajib diisi sebelum mengirim.",
+    en: "At least one bank account is required before submitting.",
+  },
+  // Exactly one bank must be the primary (Bank Utama); found a different count.
+  "error.vendor.bankPrimaryOne": {
+    id: "Tepat satu rekening utama wajib ditetapkan (ditemukan {count}).",
+    en: "Exactly one primary bank account is required (found {count}).",
+  },
+  // A mandatory document type has no uploaded version yet (the doc type is named by the issue's `path`).
+  "error.vendor.documentMissing": {
+    id: "Dokumen wajib ini belum diunggah.",
+    en: "This required document has not been uploaded yet.",
+  },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */
