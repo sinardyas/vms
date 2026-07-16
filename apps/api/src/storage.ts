@@ -130,9 +130,11 @@ export type UploadInput = {
   readonly sizeBytes: number;
   readonly originalName?: string;
   readonly uploadedBy?: string;
+  /** Object-key namespace, e.g. `vendor-banks` (default) or `document-versions` (M3.3). */
+  readonly keyPrefix?: string;
 };
 
-/** Object-key namespace for bank-account attachments (proof / KTP / surat). */
+/** Object-key namespace for bank-account attachments (proof / KTP / surat) — the default. */
 const BANK_ATTACHMENT_PREFIX = "vendor-banks";
 
 /** Strip anything but a safe filename tail, so a client-supplied name can't shape the object key. */
@@ -152,7 +154,8 @@ export const uploadFile = async (
   const invalid = validateAttachment(input.mime, input.sizeBytes);
   if (invalid) return err(invalid);
 
-  const objectKey = `${BANK_ATTACHMENT_PREFIX}/${randomUUID()}-${safeName(input.originalName)}`;
+  const prefix = input.keyPrefix ?? BANK_ATTACHMENT_PREFIX;
+  const objectKey = `${prefix}/${randomUUID()}-${safeName(input.originalName)}`;
   try {
     await store.put(objectKey, input.bytes, input.mime);
   } catch (cause) {
