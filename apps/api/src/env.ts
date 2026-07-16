@@ -46,6 +46,20 @@ export const env = {
   /** SMTP credentials — absent for Mailpit (accepts anything); required by real relays in staging. */
   smtpUser: process.env.SMTP_USER,
   smtpPass: process.env.SMTP_PASS,
+
+  // --- Object storage / MinIO (M3.2, #43) — bank & doc attachments (ADR-0008/0013) -------------
+  storage: {
+    /** S3 endpoint the API writes through. In-container this is `http://minio:9000`; on the host dev
+     * loop it's `localhost:9000` (the default), which is also browser-reachable for signed URLs. */
+    endpoint: process.env.MINIO_ENDPOINT ?? "http://localhost:9000",
+    /** Endpoint signed URLs are addressed to — the host the *browser* can reach. Defaults to the write
+     * endpoint; set it when the internal and external hosts differ (a split staging deployment). */
+    publicEndpoint: process.env.MINIO_PUBLIC_ENDPOINT,
+    accessKey: process.env.MINIO_ROOT_USER ?? "minioadmin",
+    secretKey: process.env.MINIO_ROOT_PASSWORD ?? "minioadmin",
+    bucket: process.env.MINIO_BUCKET ?? "vms-documents",
+    region: process.env.MINIO_REGION ?? "us-east-1",
+  },
 };
 
 // Fail fast in production if the auth secret was left at its insecure dev default (ADR-0015).
