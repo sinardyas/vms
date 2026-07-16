@@ -100,6 +100,30 @@ const fakeStore = (
       };
     },
     getById: async (id) => (id === VENDOR ? readyLocal : null),
+    list: async () => [
+      {
+        id: VENDOR,
+        name: readyLocal.name,
+        origin: readyLocal.origin,
+        status: readyLocal.status,
+        source: readyLocal.source,
+        taxId: readyLocal.taxId,
+        categoryId: readyLocal.categoryId,
+        countryId: readyLocal.countryId,
+        changePending: readyLocal.changePending,
+      },
+      {
+        id: OTHER,
+        name: "PT Lainnya",
+        origin: "foreign",
+        status: "pending",
+        source: "office",
+        taxId: null,
+        categoryId: null,
+        countryId: null,
+        changePending: false,
+      },
+    ],
     update: async (_ctx, id, input) => {
       calls.push(`update:${id}`);
       return id === VENDOR ? { ...readyLocal, name: input.name } : null;
@@ -161,6 +185,30 @@ describe("guard + ownership", () => {
       `/vendors/${VENDOR}`,
     );
     expect(res.status).toBe(200);
+  });
+});
+
+describe("GET /vendors — console list", () => {
+  test("without vendors:view → 403", async () => {
+    const res = await mount(() => actor("internal", []), fakeStore()).request("/vendors");
+    expect(res.status).toBe(403);
+  });
+
+  test("internal actor sees every vendor", async () => {
+    const res = await mount(() => actor("internal", ["view"]), fakeStore()).request("/vendors");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { id: string }[] };
+    expect(body.items.map((v) => v.id)).toEqual([VENDOR, OTHER]);
+  });
+
+  test("vendor-kind actor is scoped to the vendor they own (no leak)", async () => {
+    const membership = fakeMembership({ ownedVendorId: async () => VENDOR });
+    const res = await mount(() => actor("vendor", ["view"]), fakeStore(), membership).request(
+      "/vendors",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { id: string }[] };
+    expect(body.items.map((v) => v.id)).toEqual([VENDOR]);
   });
 });
 
