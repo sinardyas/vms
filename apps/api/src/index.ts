@@ -15,6 +15,7 @@ import { meRoutes } from "./me-route";
 import { operationalListRoutes } from "./operational-lists-route";
 import { registrationListRoutes } from "./registration-lists-route";
 import { sessionActorResolver } from "./session-actor";
+import { vendorBanksRoutes } from "./vendor-banks-route";
 
 const app = new Hono<AppEnv>();
 
@@ -83,5 +84,11 @@ app.route("/console/approval-routes", approvalRouteRoutes());
 // on (ADR-0002). Each is a thin instantiation of the M2.1 framework, gated on `operational_lists` and
 // audited atomically; `sla_thresholds` is captured but deliberately not enforced (config, not behaviour).
 app.route("/console/operational-lists", operationalListRoutes());
+
+// M3.2 (#43): Vendor bank accounts + attachments — the vendor-scoped bank block (CRUD + M:N currencies
+// + MinIO proof/KTP/surat uploads with signed-URL reads), gated on `vendors`. Enforces the ADR-0013/0005
+// invariants: exactly one primary per vendor, KTP+surat when the holder ≠ company, a remark when the
+// bank's country differs from the vendor's. The shared bank-block Zod (`@vms/domain`) feeds M3.4's gate.
+app.route("/vendors", vendorBanksRoutes());
 
 export default { port: env.port, fetch: app.fetch };
