@@ -106,6 +106,19 @@ export type VendorDraftPayload = {
   [field: string]: string | number | undefined;
 };
 
+/** A vendor as the browse list renders it (mirrors the API `VendorSummaryDTO`, M3.7). */
+export type VendorSummaryDTO = {
+  id: string;
+  name: string;
+  origin: "local" | "foreign";
+  status: string;
+  source: string;
+  taxId: string | null;
+  categoryId: string | null;
+  countryId: string | null;
+  changePending: boolean;
+};
+
 /** One mandatory document the vendor must supply, as the doc section renders it. */
 export type RequiredDocumentDTO = {
   documentMasterId: string;
@@ -116,6 +129,14 @@ export type RequiredDocumentDTO = {
 };
 
 export const vendorApi = {
+  /** Every vendor as a browse-list summary (M3.7) — newest first, staff-scoped by the server. */
+  list: (locale: string): Promise<VendorSummaryDTO[]> =>
+    request<{ items: VendorSummaryDTO[] }>("/vendors", locale).then((r) => r.items),
+
+  /** One vendor's full record (M3.7 profile Details tab), or throws a {@link VendorApiError}. */
+  get: (locale: string, id: string): Promise<VendorDTO> =>
+    request<{ item: VendorDTO }>(`/vendors/${id}`, locale).then((r) => r.item),
+
   // No `source` in the body: the server sets `office` from the (internal) actor kind. Sending one would
   // be ignored, so we omit it to make the "server decides the audience" contract explicit.
   create: (
@@ -228,14 +249,29 @@ export const banksApi = {
 
 /* ── Document capture (M3.3) ──────────────────────────────────────────────────────────────────── */
 
+/** One uploaded version of a document (the read fields the profile Documents tab shows). */
+export type DocumentVersionDTO = {
+  id: string;
+  versionNo: number;
+  fileId: string;
+  refNo: string | null;
+  variant: string | null;
+};
+
 export type DocumentSlotDTO = {
   id: string;
   vendorId: string;
   documentMasterId: string;
   currentVersionId: string | null;
+  currentVersion: DocumentVersionDTO | null;
+  versions: DocumentVersionDTO[];
 };
 
 export const docsApi = {
+  /** A vendor's captured document slots, each with its current version + history (M3.7 read). */
+  list: (locale: string, vid: string): Promise<DocumentSlotDTO[]> =>
+    request<{ items: DocumentSlotDTO[] }>(`/vendors/${vid}/documents`, locale).then((r) => r.items),
+
   uploadVersion: (
     locale: string,
     vid: string,
@@ -251,6 +287,40 @@ export const docsApi = {
       body: form,
     }).then((r) => r.item);
   },
+
+  /** A short-lived signed URL to preview one version's file straight from MinIO. */
+  versionUrl: (locale: string, vid: string, versionId: string): Promise<string> =>
+    request<{ url: string }>(`/vendors/${vid}/documents/versions/${versionId}/url`, locale).then(
+      (r) => r.url,
+    ),
+};
+
+/* ── Audit trail (M1.4, #23) — the profile Activity tab ───────────────────────────────────────── */
+
+/** One audit row as the Activity tab renders it (mirrors the API `AuditRowDTO`). */
+export type AuditRowDTO = {
+  id: string;
+  at: string;
+  actorUserId: string | null;
+  actorName: string | null;
+  actorEmail: string | null;
+  action: string;
+  module: string | null;
+  subjectType: string;
+  subjectId: string | null;
+  ip: string | null;
+};
+
+export const auditApi = {
+  /**
+   * The audit trail scoped to one vendor (subjectType=vendor, subjectId=vendorId) — the Activity tab.
+   * Gated `audit:view` server-side, so the caller must hold it (the tab is hidden otherwise).
+   */
+  forVendor: (locale: string, vendorId: string, limit = 100): Promise<AuditRowDTO[]> =>
+    request<{ rows: AuditRowDTO[] }>(
+      `/console/audit?subjectType=vendor&subjectId=${vendorId}&limit=${limit}`,
+      locale,
+    ).then((r) => r.rows),
 };
 
 /* ── Registration-list masters (M2.2) — the form's dropdowns ──────────────────────────────────── */
