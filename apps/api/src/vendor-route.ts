@@ -1,10 +1,17 @@
 /**
- * Vendor aggregate root — self-registration capture + submit (M3.5, #46, ADR-0004/0010/0013).
+ * Vendor aggregate root — self-registration + office registration capture + submit (M3.5/M3.6, #46/#47,
+ * ADR-0004/0009/0010/0013).
  *
- * The portal's own endpoints for the `vendors` record itself — the piece the bank (M3.2) and document
- * (M3.3) sub-resources hang off but that had no route of its own until now. Account-first, resumable
- * Draft (ADR-0004): a signed-up vendor user creates **one** Draft (owning it via `vendor_sub_users`),
- * leaves and resumes it through `GET /vendors/me`, saves partial edits leniently, and finally submits.
+ * The `vendors` record's own endpoints — the piece the bank (M3.2) and document (M3.3) sub-resources hang
+ * off but that had no route of its own until M3.5. One `POST /vendors`, two audiences (ADR-0004, keyed on
+ * the actor's `kind`):
+ *   - **self** (portal, vendor-kind) — account-first, resumable Draft: a signed-up vendor creates **one**
+ *     Draft (owning it via `vendor_sub_users`), resumes it through `GET /vendors/me`, then submits →
+ *     `pending`.
+ *   - **office** (console, internal-kind, M3.6) — staff register a vendor **on-behalf**: `source=office`,
+ *     no owner link, no one-per-owner cap (staff register many), attributed to the acting staff by audit;
+ *     submit routes to a separate HOD approval → `pending_hod` (ADR-0009 `office_vendor_registration`).
+ * Both save partial edits leniently and run the *same* M3.4 gate — the paths can never disagree on the bar.
  *
  * Two validation stages, straight from `@vms/domain` so the portal and this route never disagree:
  *   - **save-Draft (lenient)** — {@link vendorDraftInput}: a half-filled Draft round-trips (POST/PUT).
@@ -127,11 +134,15 @@ export type RequiredDocumentDTO = {
  * vendor row + the submit assembly (banks, required doc set, captured slots) + the guarded transition.
  */
 export type VendorStore = {
-  /** Insert a Draft (status `draft`, source `self`) and link `ownerUserId` as its owner, atomically. */
+  /**
+   * Insert a Draft (status `draft`) with the given `source`, atomically. When `ownerUserId` is set (the
+   * portal self-registration path) the user is linked as the vendor's owner via `vendor_sub_users`;
+   * `null` (the office on-behalf path) creates the Draft with no owner link.
+   */
   readonly create: (
     ctx: RequestContext,
-    ownerUserId: string,
     input: VendorDraftInput,
+    opts: { source: VendorSource; ownerUserId: string | null },
   ) => Promise<VendorDTO>;
   readonly getById: (vendorId: string) => Promise<VendorDTO | null>;
   /** Lenient partial update of a Draft's profile columns; `null` if the vendor is unknown. */
@@ -150,8 +161,15 @@ export type VendorStore = {
   readonly requiredDocuments: (vendor: VendorDTO) => Promise<RequiredDocumentDTO[]>;
   /** Is `taxId` already held by a *non-Draft* vendor other than `exceptVendorId`? (the dedup pre-check). */
   readonly taxIdTaken: (taxId: string, exceptVendorId: string) => Promise<boolean>;
-  /** Apply Draft→Pending + audit atomically; reports the tax-id conflict rather than throwing a 500. */
-  readonly submit: (ctx: RequestContext, vendorId: string) => Promise<SubmitOutcome>;
+  /**
+   * Apply Draft→`targetStatus` (`pending` for self, `pending_hod` for office) + audit atomically;
+   * reports the tax-id conflict rather than throwing a 500.
+   */
+  readonly submit: (
+    ctx: RequestContext,
+    vendorId: string,
+    targetStatus: "pending" | "pending_hod",
+  ) => Promise<SubmitOutcome>;
 };
 
 /* ── The real Drizzle store ─────────────────────────────────────────────────────────────────────── */
@@ -229,16 +247,24 @@ const isTaxIdConflict = (error: unknown): boolean => {
 };
 
 export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
-  create: (ctx, ownerUserId, input) =>
+  create: (ctx, input, opts) =>
     dbHandle.transaction(async (tx) => {
       const [row] = await tx
         .insert(vendors)
-        .values({ origin: input.origin, source: "self", status: "draft", ...profileValues(input) })
+        .values({
+          origin: input.origin,
+          source: opts.source,
+          status: "draft",
+          ...profileValues(input),
+        })
         .returning();
       if (!row) throw new Error("vendor insert returned no row");
-      await tx
-        .insert(vendorSubUsers)
-        .values({ vendorId: row.id, userId: ownerUserId, isOwner: true });
+      // Portal (self) links the signed-up user as owner; office (on-behalf) has no owner link.
+      if (opts.ownerUserId) {
+        await tx
+          .insert(vendorSubUsers)
+          .values({ vendorId: row.id, userId: opts.ownerUserId, isOwner: true });
+      }
       await writeAudit(tx, ctx, {
         action: "vendor.created",
         module: MODULE,
@@ -420,12 +446,12 @@ export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
     return rows.some((r) => r.id !== exceptVendorId);
   },
 
-  submit: (ctx, vendorId) =>
+  submit: (ctx, vendorId, targetStatus) =>
     dbHandle.transaction(async (tx): Promise<SubmitOutcome> => {
       try {
         await tx
           .update(vendors)
-          .set({ status: "pending", updatedAt: new Date() })
+          .set({ status: targetStatus, updatedAt: new Date() })
           .where(eq(vendors.id, vendorId));
       } catch (error) {
         if (isTaxIdConflict(error)) return "tax_conflict";
@@ -479,23 +505,38 @@ export const vendorRoutes = (
     return item ? c.json({ item }) : sendError(c, notFoundError());
   });
 
-  // Create a Draft + own it. One registration per owner (Phase-0 single-owner) → 409 to resume.
+  // Create a Draft. The actor's `kind` picks the audience (ADR-0004): a **vendor** self-registers —
+  // exactly one owned Draft (Phase-0 single-owner) → 409 to resume the existing one; **internal** staff
+  // register on-behalf (M3.6) — `source=office`, no owner link, and many are allowed (no one-per-owner).
+  // The server sets `source` from the actor kind, never from the client, so the audience can't be forged.
   app.post("/vendors", requirePermission(MODULE, "add"), async (c) => {
     const actor = c.var.ctx.actor;
     if (!actor) return sendError(c, notFoundError());
-    const existing = await membership.ownedVendorId(actor.userId);
-    if (existing) {
-      return sendError(
-        c,
-        conflictError({
-          messageKey: "error.vendor.alreadyRegistered",
-          params: { vendorId: existing },
-        }),
-      );
-    }
     const parsed = await parseDraftBody(c);
     if (!parsed.ok) return sendError(c, parsed.error);
-    const item = await store.create(c.var.ctx, actor.userId, parsed.value);
+
+    if (actor.kind === "vendor") {
+      const existing = await membership.ownedVendorId(actor.userId);
+      if (existing) {
+        return sendError(
+          c,
+          conflictError({
+            messageKey: "error.vendor.alreadyRegistered",
+            params: { vendorId: existing },
+          }),
+        );
+      }
+      const item = await store.create(c.var.ctx, parsed.value, {
+        source: "self",
+        ownerUserId: actor.userId,
+      });
+      return c.json({ item }, 201);
+    }
+
+    const item = await store.create(c.var.ctx, parsed.value, {
+      source: "office",
+      ownerUserId: null,
+    });
     return c.json({ item }, 201);
   });
 
@@ -556,7 +597,10 @@ export const vendorRoutes = (
       return sendError(c, conflictError({ messageKey: "error.vendor.taxIdDuplicate" }));
     }
 
-    const outcome = await store.submit(c.var.ctx, vendor.id);
+    // Route to the right approval queue by source (ADR-0009): office registrations go to HOD
+    // (`pending_hod`), self-registrations to the standard AP queue (`pending`). Same gate, one transition.
+    const targetStatus = vendor.source === "office" ? "pending_hod" : "pending";
+    const outcome = await store.submit(c.var.ctx, vendor.id, targetStatus);
     if (outcome === "tax_conflict") {
       return sendError(c, conflictError({ messageKey: "error.vendor.taxIdDuplicate" }));
     }
