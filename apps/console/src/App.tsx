@@ -36,6 +36,7 @@ import { ApprovalRoutes } from "./features/approval-routes";
 import { Approvals } from "./features/approvals";
 import { AuditLog } from "./features/audit-log";
 import { DocumentMaster } from "./features/document-master";
+import { DocumentVerification } from "./features/document-verification";
 import { OperationalLists } from "./features/operational-lists";
 import { RegistrationLists } from "./features/registration-lists";
 import { Vendors } from "./features/vendors";
@@ -171,6 +172,8 @@ function Console() {
         <Gallery />
       ) : current === "vendors" ? (
         <Vendors />
+      ) : current === "verification" ? (
+        <DocumentVerification />
       ) : current === "approvals" ? (
         <Approvals />
       ) : current === "audit" ? (
