@@ -1,7 +1,15 @@
 import { sql } from "drizzle-orm";
 import { boolean, integer, pgTable, text, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 import { timestamps } from "./_shared";
-import { originEnum, paymentTermEnum, vendorSourceEnum, vendorStatusEnum } from "./enums";
+import {
+  companyScaleEnum,
+  npwpTypeEnum,
+  originEnum,
+  paymentTermEnum,
+  taxStatusEnum,
+  vendorSourceEnum,
+  vendorStatusEnum,
+} from "./enums";
 import { users } from "./auth";
 import { banks, businessEntities, countries, currencies, vendorCategories } from "./master-data";
 import { files } from "./files";
@@ -21,6 +29,14 @@ export const vendors = pgTable(
     businessEntityId: uuid().references(() => businessEntities.id),
     categoryId: uuid().references(() => vendorCategories.id), // single category (ADR-0013)
     taxId: varchar({ length: 40 }), // NPWP (local) | VAT/BRN (foreign); null in Draft
+    // taxation status (drift-audit #4 P0): PKP status × taxpayer type; drives PPN + SPPKP.
+    // Nullable in Draft, required at submit for local origin (M3.4).
+    taxStatus: taxStatusEnum(),
+    npwpType: npwpTypeEnum(), // personal / head-office / branch NPWP (drift-audit #4)
+    companyScale: companyScaleEnum(), // Skala Perusahaan per SIUP (drift-audit #4 P1)
+    // "Vendor Procurement" portal field — preserved as a free-text note; drives nothing in
+    // Phase-0 (E-Proc integration is Phase-2). Kept so staff don't lose what the vendor typed.
+    procurementNote: varchar({ length: 200 }),
 
     // profile
     address: text(),
@@ -89,6 +105,7 @@ export const vendorBanks = pgTable(
     accountNo: varchar({ length: 60 }).notNull(),
     holderName: varchar({ length: 240 }).notNull(),
     branch: varchar({ length: 160 }),
+    description: varchar({ length: 200 }), // bank "Deskripsi/Description" field (drift-audit #4 P1)
     swift: varchar({ length: 16 }),
     iban: varchar({ length: 40 }),
     bankCountryId: uuid().references(() => countries.id),
