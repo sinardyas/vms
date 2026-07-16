@@ -14,6 +14,7 @@ import type { z } from "zod";
 import { type DomainError, validationError } from "../errors";
 import { type Result, err, ok } from "../result";
 
+export * from "./activation-gate";
 export * from "./common";
 export * from "./document-verification";
 export * from "./vendor";
