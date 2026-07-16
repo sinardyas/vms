@@ -92,6 +92,30 @@ export const DOC_APPLIES_TO = ["local", "foreign", "both"] as const;
 export type DocAppliesTo = (typeof DOC_APPLIES_TO)[number];
 export const docAppliesToSchema = z.enum(DOC_APPLIES_TO);
 
+/**
+ * Vendor taxation status (drift-audit #4 P0). PKP = registered VAT collector (drives PPN
+ * eligibility + the SPPKP document requirement), crossed with taxpayer type (badan/perorangan).
+ * Nullable in Draft, required at submit for local origin (M3.4).
+ */
+export const TAX_STATUSES = [
+  "pkp_corporate",
+  "pkp_individual",
+  "non_pkp_corporate",
+  "non_pkp_individual",
+] as const;
+export type TaxStatus = (typeof TAX_STATUSES)[number];
+export const taxStatusSchema = z.enum(TAX_STATUSES);
+
+/** NPWP sub-type (drift-audit #4) — personal vs company head-office vs branch registration. */
+export const NPWP_TYPES = ["personal", "head_office", "branch"] as const;
+export type NpwpType = (typeof NPWP_TYPES)[number];
+export const npwpTypeSchema = z.enum(NPWP_TYPES);
+
+/** Company scale per SIUP (drift-audit #4 P1) — the Indonesian SME classification. */
+export const COMPANY_SCALES = ["kecil", "menengah", "besar"] as const;
+export type CompanyScale = (typeof COMPANY_SCALES)[number];
+export const companyScaleSchema = z.enum(COMPANY_SCALES);
+
 /** Vendor payment terms captured at registration (design + ADR-0013). */
 export const PAYMENT_TERMS = ["credit_30", "credit_45", "credit_60", "cod", "agent"] as const;
 export type PaymentTerm = (typeof PAYMENT_TERMS)[number];
