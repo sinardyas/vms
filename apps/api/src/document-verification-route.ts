@@ -16,17 +16,26 @@
  * already decided is terminal — a re-upload makes a fresh `pending` version (the pure `isVersionDecidable`
  * guard, {@link @vms/domain}).
  *
- * **Scope boundary (M5.1 = engine + actions only):** rejecting a mandatory doc does **not** yet return the
- * request to Draft or notify — that wiring is **M5.3**; the all-mandatory-Verified **activation gate** at
- * the final-approval effect is **M5.2** (this surface only *sets* the verify state both later read); the
- * console screen + doc viewer are **M5.4**. A `documents`-gated presign is included here so the verifier
- * (who doesn't hold `vendors:view`) can fetch a document to judge it — the M5.4 viewer builds on it.
+ * **Reject → Draft + versioning (M5.3, #70, ADR-0011/0014):** rejecting a **mandatory** doc (one in the
+ * vendor's required set, origin ∪ single-category — the same set the M5.2 gate waits on) also returns the
+ * registration to Draft: it resolves the vendor's open request `rejected` and bounces the vendor to
+ * `draft` (the M4.2 `return_to_draft` effect, reached from the verify path), all in the reject's own
+ * transaction, and fires the {@link VerificationNotifier} seam (real delivery is M6). Rejecting an
+ * **optional** doc does not bounce. Re-upload is the M3.3 capture path (pointer moves, history kept); the
+ * new version starts `pending`, so a corrected doc must be re-verified — no code here, that path already
+ * exists once the vendor is back in Draft.
+ *
+ * **Scope boundary:** the all-mandatory-Verified **activation gate** at the final-approval effect is
+ * **M5.2** (this surface only *sets* the verify state both it and M5.3 read); the console screen + doc
+ * viewer are **M5.4**. A `documents`-gated presign is included here so the verifier (who doesn't hold
+ * `vendors:view`) can fetch a document to judge it — the M5.4 viewer builds on it.
  *
  * Stores + storage are injectable so the whole surface is testable without Postgres or MinIO.
  */
 
 import {
   type DB,
+  approvalRequests,
   db as defaultDb,
   documentMaster,
   documentSlots,
@@ -52,6 +61,7 @@ import { writeAudit } from "./audit";
 import type { AppEnv } from "./context";
 import { sendError } from "./http-error";
 import { requirePermission } from "./rbac";
+import { requiredDocMasterIdsForVendor } from "./required-documents";
 import { type AttachmentStorage, attachmentStorage } from "./storage";
 
 /** Verification is its own RBAC module — the verifier holds `documents`, not `vendors` (ADR-0012/0014). */
@@ -91,8 +101,34 @@ export type VerifiedVersionDTO = {
 export type DecideFailure = "not_found" | "not_current" | "vendor_not_pending" | "already_decided";
 
 export type DecideOutcome =
-  | { readonly ok: true; readonly item: VerifiedVersionDTO }
+  | {
+      readonly ok: true;
+      readonly item: VerifiedVersionDTO;
+      /**
+       * Set (with the bounced vendor's id) when this decision returned the registration to Draft — a
+       * **mandatory** doc was rejected (M5.3). The route uses it to fire the notify seam and tell the
+       * console the vendor was bounced. Absent on a verify or an optional-doc reject.
+       */
+      readonly returnedToDraft?: { readonly vendorId: string };
+    }
   | { readonly ok: false; readonly reason: DecideFailure };
+
+/**
+ * Notification seam (M5.3) — fired when a mandatory-doc rejection returns a registration to Draft, so the
+ * vendor is told to re-upload the corrected document. A **seam only**: the real delivery (email / in-app)
+ * is wired in **M6**; the default is a no-op. The state change itself is already audited — this is the
+ * outbound notice, deliberately kept out of the decide transaction so it can't fire on a rollback and a
+ * delivery failure can't undo the bounce.
+ */
+export type VerificationNotifier = (event: {
+  readonly ctx: RequestContext;
+  readonly vendorId: string;
+  readonly versionId: string;
+  readonly reason: string;
+}) => void | Promise<void>;
+
+/** Default notify seam — does nothing until M6 wires real delivery. */
+const noopNotifier: VerificationNotifier = () => {};
 
 /**
  * The data-access seam behind the router — every DB (and, for presign, MinIO-key) touch, so the route is
@@ -140,16 +176,72 @@ type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 export const drizzleDocumentVerificationStore = (
   dbHandle: DB = defaultDb,
 ): DocumentVerificationStore => {
+  /** The version + its slot's owning vendor, loaded once per decision for the guards + the M5.3 bounce. */
+  type DecidedRow = {
+    versionId: string;
+    verifyStatus: (typeof documentVersions.$inferSelect)["verifyStatus"];
+    slotCurrentVersionId: string | null;
+    vendorId: string;
+    vendorStatus: (typeof vendors.$inferSelect)["status"];
+    documentMasterId: string;
+  };
+
+  /**
+   * Return the registration to Draft (M5.3, the M4.2 `return_to_draft` effect reached from the verify
+   * path): resolve the vendor's open request `rejected` and bounce the vendor to `draft`, atomically in
+   * the reject's transaction. The vendor is guarded Pending, so its single open request is the
+   * registration — once back in Draft the vendor re-uploads (M3.3), the new version starting `pending`.
+   * The doc's reject reason is already recorded on the version; the request/vendor changes are audited.
+   */
+  const returnRegistrationToDraft = async (
+    tx: Tx,
+    ctx: RequestContext,
+    vendorId: string,
+  ): Promise<void> => {
+    const now = new Date();
+    const [openRequest] = await tx
+      .select({ id: approvalRequests.id })
+      .from(approvalRequests)
+      .where(
+        and(eq(approvalRequests.subjectVendorId, vendorId), eq(approvalRequests.status, "pending")),
+      )
+      .limit(1);
+    if (openRequest) {
+      await tx
+        .update(approvalRequests)
+        .set({ status: "rejected", resolvedAt: now, updatedAt: now })
+        .where(eq(approvalRequests.id, openRequest.id));
+      await writeAudit(tx, ctx, {
+        action: "approval_request.rejected",
+        module: "approvals",
+        subjectType: "approval_request",
+        subjectId: openRequest.id,
+      });
+    }
+    await tx
+      .update(vendors)
+      .set({ status: "draft", updatedAt: now })
+      .where(eq(vendors.id, vendorId));
+    await writeAudit(tx, ctx, {
+      action: "vendor.returned_to_draft",
+      module: "vendors",
+      subjectType: "vendor",
+      subjectId: vendorId,
+    });
+  };
+
   /**
    * Shared decide path: load the version with its slot + owning vendor, run the three guards (vendor
-   * Pending, current version, still decidable), apply `patch`, audit `action`, and return the fresh DTO —
-   * all in one transaction so the write + audit commit together.
+   * Pending, current version, still decidable), apply `patch`, audit `action`, then run `onDecided`
+   * (reject's mandatory-doc bounce, if any) — all in one transaction so the write, audit, and bounce
+   * commit together. `onDecided` may return the bounced vendor's id to surface on the outcome.
    */
   const decide = async (
     ctx: RequestContext,
     versionId: string,
     action: "document_version.verified" | "document_version.rejected",
     patch: Partial<typeof documentVersions.$inferInsert>,
+    onDecided?: (tx: Tx, row: DecidedRow) => Promise<{ vendorId: string } | undefined>,
   ): Promise<DecideOutcome> =>
     dbHandle.transaction(async (tx) => {
       const [row] = await tx
@@ -157,7 +249,9 @@ export const drizzleDocumentVerificationStore = (
           versionId: documentVersions.id,
           verifyStatus: documentVersions.verifyStatus,
           slotCurrentVersionId: documentSlots.currentVersionId,
+          vendorId: documentSlots.vendorId,
           vendorStatus: vendors.status,
+          documentMasterId: documentSlots.documentMasterId,
         })
         .from(documentVersions)
         .innerJoin(documentSlots, eq(documentVersions.slotId, documentSlots.id))
@@ -184,7 +278,8 @@ export const drizzleDocumentVerificationStore = (
         subjectType: "document_version",
         subjectId: versionId,
       });
-      return { ok: true as const, item: toVersionDTO(updated) };
+      const returnedToDraft = onDecided ? await onDecided(tx, row) : undefined;
+      return { ok: true as const, item: toVersionDTO(updated), returnedToDraft };
     });
 
   return {
@@ -231,12 +326,25 @@ export const drizzleDocumentVerificationStore = (
       }),
 
     reject: (ctx, versionId, reason, verifierUserId) =>
-      decide(ctx, versionId, "document_version.rejected", {
-        verifyStatus: "rejected",
-        rejectReason: reason,
-        verifiedBy: verifierUserId ?? null,
-        verifiedAt: new Date(),
-      }),
+      decide(
+        ctx,
+        versionId,
+        "document_version.rejected",
+        {
+          verifyStatus: "rejected",
+          rejectReason: reason,
+          verifiedBy: verifierUserId ?? null,
+          verifiedAt: new Date(),
+        },
+        // M5.3: only a **mandatory** doc (in the vendor's required set, origin ∪ single-category — the
+        // exact set the M5.2 gate waits on) bounces the registration to Draft; an optional doc doesn't.
+        async (tx, row) => {
+          const requiredIds = await requiredDocMasterIdsForVendor(tx, row.vendorId);
+          if (!requiredIds.includes(row.documentMasterId)) return undefined;
+          await returnRegistrationToDraft(tx, ctx, row.vendorId);
+          return { vendorId: row.vendorId };
+        },
+      ),
 
     versionObjectKey: async (versionId) => {
       const [row] = await dbHandle
@@ -273,6 +381,7 @@ const decideError = (reason: DecideFailure) => {
 export const documentVerificationRoutes = (
   store: DocumentVerificationStore = drizzleDocumentVerificationStore(),
   storage: AttachmentStorage = attachmentStorage(),
+  notify: VerificationNotifier = noopNotifier,
 ): Hono<AppEnv> => {
   const app = new Hono<AppEnv>();
 
@@ -320,13 +429,21 @@ export const documentVerificationRoutes = (
     if (!parsed.ok) {
       return sendError(c, validationError({ messageKey: "error.document.rejectReasonRequired" }));
     }
-    const outcome = await store.reject(
-      c.var.ctx,
-      c.req.param("versionId"),
-      (parsed.value as RejectDocumentInput).reason,
-      c.var.ctx.actor?.userId,
-    );
-    return outcome.ok ? c.json({ item: outcome.item }) : sendError(c, decideError(outcome.reason));
+    const reason = (parsed.value as RejectDocumentInput).reason;
+    const versionId = c.req.param("versionId");
+    const outcome = await store.reject(c.var.ctx, versionId, reason, c.var.ctx.actor?.userId);
+    if (!outcome.ok) return sendError(c, decideError(outcome.reason));
+    // M5.3: a mandatory-doc rejection returned the registration to Draft — fire the notify seam (M6 wires
+    // real delivery) after the decide tx committed, and tell the console the vendor was bounced.
+    if (outcome.returnedToDraft) {
+      await notify({
+        ctx: c.var.ctx,
+        vendorId: outcome.returnedToDraft.vendorId,
+        versionId,
+        reason,
+      });
+    }
+    return c.json({ item: outcome.item, returnedToDraft: !!outcome.returnedToDraft });
   });
 
   return app;
