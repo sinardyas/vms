@@ -192,27 +192,139 @@ function StartPanel({ onCreated }: { onCreated: (v: VendorDTO) => void }) {
   );
 }
 
-/** Submitted (or beyond) — the read-only status view; the Draft is no longer editable here. */
-function StatusView({ vendor }: { vendor: VendorDTO }) {
-  const t = useT();
-  const pending = vendor.status !== "draft";
+/** One read-only label/value row in the status summary. */
+function StatusRow({ label, value }: { label: string; value: string }) {
   return (
-    <Card className="mx-auto max-w-2xl">
-      <CardHeader>
-        <CardTitle>{t("portal.status.title")}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex items-center gap-3">
-          <span className="text-lg font-bold text-foreground">{vendor.name}</span>
-          <StatusPill tone={pending ? "pending" : "neutral"}>
-            {pending ? t("portal.status.pending") : t("portal.status.draft")}
-          </StatusPill>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {pending ? t("portal.status.pendingBody") : t("portal.status.draftBody")}
-        </p>
-      </CardContent>
-    </Card>
+    <div className="flex justify-between gap-4 border-b border-border py-2 text-sm last:border-b-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-right font-semibold text-foreground">{value || "—"}</span>
+    </div>
+  );
+}
+
+/**
+ * Submitted (or beyond) — the read-only status view (M3.7): "where's my registration?". Shows the
+ * lifecycle status plus a read-only summary of what was submitted (profile, banks, documents) so the
+ * vendor can see their registration without being able to edit it (the Draft is no longer editable).
+ */
+function StatusView({ vendor }: { vendor: VendorDTO }) {
+  const { locale } = useLocale();
+  const t = useT();
+  const lists = useLists();
+  const pending = vendor.status !== "draft";
+  const [banks, setBanks] = useState<BankDTO[]>([]);
+  const [docs, setDocs] = useState<RequiredDocumentDTO[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    banksApi
+      .list(locale, vendor.id)
+      .then((b) => alive && setBanks(b))
+      .catch(() => alive && setBanks([]));
+    vendorApi
+      .requiredDocuments(locale, vendor.id)
+      .then((d) => alive && setDocs(d))
+      .catch(() => alive && setDocs([]));
+    return () => {
+      alive = false;
+    };
+  }, [locale, vendor.id]);
+
+  const categoryLabel = (() => {
+    const row = vendor.categoryId
+      ? lists?.categories.find((r) => r.id === vendor.categoryId)
+      : undefined;
+    return row ? resolveLabel({ id: row.nameId, en: row.nameEn }, locale) : "";
+  })();
+
+  return (
+    <div className="mx-auto flex max-w-2xl flex-col gap-5">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("portal.status.title")}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-lg font-bold text-foreground">{vendor.name}</span>
+            <StatusPill tone={pending ? "pending" : "neutral"}>
+              {pending ? t("portal.status.pending") : t("portal.status.draft")}
+            </StatusPill>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {pending ? t("portal.status.pendingBody") : t("portal.status.draftBody")}
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("portal.status.summaryTitle")}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col">
+          <StatusRow
+            label={t("portal.reg.originQuestion")}
+            value={t(`enum.origin.${vendor.origin}` as MessageKey)}
+          />
+          <StatusRow label={t("portal.field.taxId")} value={vendor.taxId ?? ""} />
+          <StatusRow label={t("portal.field.category")} value={categoryLabel} />
+          <StatusRow label={t("portal.field.email")} value={vendor.email ?? ""} />
+          <StatusRow label={t("portal.field.picName")} value={vendor.picName ?? ""} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("portal.status.banksTitle")}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {banks.length === 0 && (
+            <p className="text-sm text-muted-foreground">{t("portal.bank.none")}</p>
+          )}
+          {banks.map((b) => (
+            <div
+              key={b.id}
+              className="flex items-center justify-between rounded-xl border border-input p-4"
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-foreground">{b.bankName}</span>
+                  {b.isPrimary && (
+                    <StatusPill tone="info">{t("portal.bank.primaryBadge")}</StatusPill>
+                  )}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {b.accountNo} · {b.holderName}
+                </div>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("portal.status.docsTitle")}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {docs.length === 0 && (
+            <p className="text-sm text-muted-foreground">{t("portal.doc.none")}</p>
+          )}
+          {docs.map((d) => (
+            <div
+              key={d.documentMasterId}
+              className="flex items-center justify-between gap-4 rounded-xl border border-input p-4"
+            >
+              <span className="font-semibold text-foreground">
+                {resolveLabel({ id: d.nameId, en: d.nameEn }, locale)}
+              </span>
+              <StatusPill tone={d.captured ? "success" : "pending"}>
+                {d.captured ? t("portal.doc.uploaded") : t("portal.doc.mandatory")}
+              </StatusPill>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
