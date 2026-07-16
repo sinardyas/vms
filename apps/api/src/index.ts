@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { accessRoutes } from "./access-route";
+import { approvalRoutes } from "./approval-route";
 import { approvalRouteRoutes } from "./approval-routes-route";
 import { auditRoutes } from "./audit-route";
 import { auth } from "./auth";
@@ -81,6 +82,13 @@ app.route("/console/document-master", documentMasterRoutes());
 // the deadlock guard (ADR-0011b) that warns, re-confirmably, before a save strands a step with no
 // eligible approver (reusing the M1.5 eligibility count + M1.6 SoD primitive).
 app.route("/console/approval-routes", approvalRouteRoutes());
+
+// M4.2 (#57): Approval workflow engine — the queue/detail reads + approve/reject/reassign decisions
+// that walk a submitted request through its route (resolved by trigger, ADR-0005). Requests are opened
+// at submit (see the vendor route's store); this router acts on the open ones. Gated on `approvals`,
+// every decision audited. SoD + escalation are M4.3; the M5.2 activation gate slots into the `activate`
+// effect; M4.6 builds the console UX on these endpoints.
+app.route("/console/approvals", approvalRoutes());
 
 // M2.5 (#36): Operational lists — the six behaviorally-inert reference lists (departments, soechi
 // entities, vessels, ports, tax codes, SLA thresholds) the console manages but nothing in Phase-0 acts
