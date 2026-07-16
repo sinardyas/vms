@@ -74,9 +74,14 @@ import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
+import type { StepAssignment } from "./approval-engine";
 import { writeAudit } from "./audit";
+import { sendOfficeInvite } from "./auth";
 import type { AppEnv } from "./context";
+import { env } from "./env";
 import { sendError } from "./http-error";
+import { notificationReader, notifyDecision, notifyStepAssigned } from "./notification-events";
+import { provisionOfficeOwner } from "./office-account";
 import { expandGrants } from "./permissions";
 import { requirePermission } from "./rbac";
 import { requiredDocMasterIdsForVendor } from "./required-documents";
@@ -180,8 +185,31 @@ export type DecideInput = {
  * mandatory doc is Verified yet, a 409 whose `gate` rides along so the route can localize the "N of M
  * verified" message.
  */
+/**
+ * What a committed decision means for the outside world (M6.2, ADR-0012) — gathered inside the decide
+ * transaction, delivered by the route once it has committed.
+ *
+ * The store can't send these itself: it *is* the transaction, and a notification sent from inside one
+ * is a claim that might still be rolled back. But the route can't gather them either — the vendor's
+ * source, the freshly-assigned next approver, and the invite address are all facts the tx read while
+ * it held them. So the tx decides *what to say* and the route decides *when to say it*, which is the
+ * only split that keeps both halves honest.
+ */
+export type DecideNotices = {
+  /** Set when this decision resolved a **registration** — the vendor is told approved/rejected. */
+  readonly decision: { readonly outcome: "approved" | "rejected" } | null;
+  /** Set when the decision advanced the route — the next step's auto-assigned approver is told. */
+  readonly nextAssignment: StepAssignment | null;
+  /** Set when activation provisioned an office vendor's owner — their invite address (M6.2). */
+  readonly officeInviteEmail: string | null;
+};
+
 export type DecideOutcome =
-  | { readonly ok: true; readonly detail: ApprovalRequestDetailDTO }
+  | {
+      readonly ok: true;
+      readonly detail: ApprovalRequestDetailDTO;
+      readonly notices: DecideNotices;
+    }
   | {
       readonly ok: false;
       readonly reason:
@@ -238,6 +266,9 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         id: approvalRequests.id,
         subjectVendorId: approvalRequests.subjectVendorId,
         vendorName: vendors.name,
+        // Whether the vendor registered itself or was registered on its behalf (M3.6) — an office
+        // vendor's activation has to mint the owner account nobody created for it (M6.2).
+        vendorSource: vendors.source,
         trigger: approvalRequests.trigger,
         status: approvalRequests.status,
         currentStepNo: approvalRequests.currentStepNo,
@@ -552,8 +583,14 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
           );
 
         // 2. Advance to the next step (auto-assign its role's lead, ADR-0012) or resolve the request.
+        let nextAssignment: StepAssignment | null = null;
         if (outcome.advanceToStepNo !== null) {
           const next = steps.find((s) => s.stepNo === outcome.advanceToStepNo);
+          nextAssignment = {
+            assigneeUserId: next?.leadUserId ?? null,
+            roleNameId: next?.roleNameId ?? null,
+            roleNameEn: next?.roleNameEn ?? null,
+          };
           await tx
             .update(approvalRequests)
             .set({ currentStepNo: outcome.advanceToStepNo, updatedAt: now })
@@ -577,12 +614,35 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         // 3. Apply the subject effect (ADR-0005). Registration: final approve → vendor Active; reject →
         // Draft. Edit (M4.5): final approve → apply the diff to the still-Active vendor + clear the flag;
         // reject → discard the diff + clear the flag (the vendor is untouched either way).
+        let officeInviteEmail: string | null = null;
         if (outcome.subjectEffect === "activate") {
           // The M5.2 gate above already cleared this activation (all mandatory docs Verified).
           await tx
             .update(vendors)
             .set({ status: "active", updatedAt: now })
             .where(eq(vendors.id, row.subjectVendorId));
+          // An office-registered vendor has no user (M3.6 links no owner) — activation is the moment
+          // it earns one, so mint the account here, in the same tx: a vendor must never be able to
+          // reach Active with no way for anyone to claim it. The invite email goes out after commit.
+          if (row.vendorSource === "office") {
+            const provisioned = await provisionOfficeOwner(tx, row.subjectVendorId, ctx.locale);
+            if (provisioned.status === "provisioned") {
+              officeInviteEmail = provisioned.email;
+              await writeAudit(tx, ctx, {
+                action: "vendor.owner_provisioned",
+                module: "vendors",
+                subjectType: "vendor",
+                subjectId: row.subjectVendorId,
+              });
+            } else if (provisioned.status === "no-contact") {
+              // Not fatal: the decision is sound and the record is correct — but nobody can be
+              // invited, so say so loudly rather than let the vendor go live unclaimable in silence.
+              console.error(
+                "[office-invite] activated office vendor has no PIC or company email",
+                row.subjectVendorId,
+              );
+            }
+          }
         } else if (outcome.subjectEffect === "return_to_draft") {
           await tx
             .update(vendors)
@@ -634,7 +694,21 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
 
         const detail = await buildDetail(tx, input.requestId);
         if (!detail) throw new Error("approval request vanished mid-decision");
-        return { ok: true, detail };
+        return {
+          ok: true,
+          detail,
+          notices: {
+            // Only a **registration** resolution is the vendor's news. An edit (M4.5) is staff
+            // re-approving a change on a record that stays Active throughout — the vendor's own
+            // lifecycle didn't move, and the catalogue scopes `decision` to registrations.
+            decision:
+              isEditTrigger(row.trigger) || outcome.requestStatus === "pending"
+                ? null
+                : { outcome: outcome.requestStatus },
+            nextAssignment,
+            officeInviteEmail,
+          },
+        };
       }),
 
     reassign: (ctx, input) =>
@@ -732,6 +806,50 @@ const parseBody = async <T>(c: Context<AppEnv>, schema: z.ZodType<T>) => {
 };
 
 /**
+ * Deliver everything a committed decision owes the outside world (M6.2, ADR-0012): the vendor hears
+ * the registration verdict, the next approver hears the step landed on them, and a newly-provisioned
+ * office owner gets the link that lets them in.
+ *
+ * Ordered so the office invite comes last, and deliberately: it's the only one carrying a credential
+ * link, so it's the one whose absence a vendor would actually be stuck on.
+ */
+const dispatchDecisionNotices = async (
+  ctx: RequestContext,
+  detail: ApprovalRequestDetailDTO,
+  notices: DecideNotices,
+  reason: string | null,
+): Promise<void> => {
+  const reader = notificationReader();
+  if (notices.decision) {
+    await notifyDecision(reader, {
+      vendorId: detail.subjectVendorId,
+      vendorName: detail.vendorName,
+      outcome: notices.decision.outcome,
+      reason,
+      // An approved vendor lands on their record; a rejected one lands where the work is — the
+      // registration they now have to fix. Both live in the portal, which is the vendor's world.
+      url: `${env.portalUrl}/registration`,
+    });
+  }
+  if (notices.nextAssignment) {
+    await notifyStepAssigned(reader, {
+      assigneeUserId: notices.nextAssignment.assigneeUserId,
+      vendorName: detail.vendorName,
+      roleLabel: {
+        nameId: notices.nextAssignment.roleNameId,
+        nameEn: notices.nextAssignment.roleNameEn,
+      },
+      url: `${env.consoleUrl}/approvals`,
+    });
+  }
+  if (notices.officeInviteEmail) {
+    // Mints a password-set token and mails it as the invite — see `auth.ts`, which recognises the
+    // link and sends `office_invite` rather than a bare "reset your password".
+    await sendOfficeInvite(notices.officeInviteEmail);
+  }
+};
+
+/**
  * Build the `/console/approvals` engine router. `GET /` is the queue (open requests; `?mine=1` scopes to
  * the caller's assigned steps, `?vendorId=` to one vendor); `GET /:id` the detail; `POST /:id/approve`
  * and `/:id/reject` decide; `POST /:id/steps/:stepNo/reassign` delegates a step. Gated on `approvals`,
@@ -806,6 +924,10 @@ export const approvalRoutes = (store: ApprovalStore = drizzleApprovalStore()): H
           return sendError(c, activationGateError(outcome.gate));
       }
     }
+    // The decision has committed — everything below is the outside world being told about it, after
+    // the fact and never inside the transaction (M6.2, ADR-0012). Each of these swallows its own
+    // failures: the decision stands whether or not the mail gets through.
+    await dispatchDecisionNotices(c.var.ctx, outcome.detail, outcome.notices, reason);
     return c.json({ item: outcome.detail });
   };
 

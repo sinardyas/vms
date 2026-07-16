@@ -37,6 +37,7 @@ import {
   parseWith,
   renderNotification,
   resolveTemplate,
+  translate,
 } from "@vms/domain";
 import { eq } from "drizzle-orm";
 import { sendRenderedEmail } from "./email";
@@ -134,12 +135,28 @@ export const loadRecipient = async (userId: string): Promise<NotificationRecipie
   return row ?? null;
 };
 
+/**
+ * How long a tokenized link stays good, per event — the small print under the CTA.
+ *
+ * Two of the five events carry a *token*, not a plain deep link: `email_verify` (better-auth's
+ * verification token, `emailVerification.expiresIn`) and `office_invite` (the password-set token
+ * minted by `requestPasswordReset`). Both expire, and an email that doesn't say so leaves the reader
+ * to discover it by clicking a dead link. The other three point at a durable page and have no
+ * expiry to state. Mirrors the note `sendLinkEmail` already puts on M1.1's auth mail — which is why
+ * re-pointing verify through this service (M6.2) doesn't quietly drop its footer.
+ */
+const LINK_EXPIRY_MINUTES: Partial<Record<NotificationEvent, number>> = {
+  email_verify: 60,
+  office_invite: 60,
+};
+
 /** Send one notification as an email, rendered into the recipient's locale. */
 const sendNotificationEmail = async (
   recipient: NotificationRecipient,
   input: NotificationInput,
 ): Promise<void> => {
   const rendered = renderNotification(input, recipient.locale);
+  const minutes = LINK_EXPIRY_MINUTES[input.event];
   await sendRenderedEmail({
     to: recipient.email,
     locale: recipient.locale,
@@ -148,6 +165,13 @@ const sendNotificationEmail = async (
     body: rendered.body,
     cta: rendered.cta,
     url: input.params.url,
+    footerLines:
+      minutes === undefined
+        ? undefined
+        : [
+            translate("auth.email.expiry", recipient.locale, { minutes }),
+            translate("auth.email.ignore", recipient.locale),
+          ],
   });
 };
 

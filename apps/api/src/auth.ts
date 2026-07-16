@@ -24,14 +24,17 @@ import {
   roles,
   userRoles,
   users,
+  vendorSubUsers,
+  vendors,
 } from "@vms/db";
 import { type Locale, resolveLocale } from "@vms/domain";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { type AuditAttribution, type AuditEntry, writeAuditRow } from "./audit";
-import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
+import { sendPasswordResetEmail } from "./email";
 import { env } from "./env";
+import { notify } from "./notifications";
 
 /**
  * Record an auth mutation in the audit trail (M1.4, ADR-0011). Registration and each sign-in are the
@@ -68,6 +71,67 @@ const assignVendorRole = async (userId: string): Promise<void> => {
     await db.insert(userRoles).values({ userId, roleId: vendorRole.id }).onConflictDoNothing();
   } catch (error) {
     console.error("[auth] failed to assign vendor role", userId, error);
+  }
+};
+
+/**
+ * Remember the language a user signed up in (M6.2, #78) — `users.locale`.
+ *
+ * M6.1 added the column with a default of `id` and noted that **nothing captured the preference**;
+ * this is that capture. It matters more than it looks: `notify()` renders in the *recipient's*
+ * locale, so without a stored preference every notification a vendor ever receives would be
+ * Indonesian, no matter that they signed up in English. Re-pointing the verify mail through the
+ * service (below) would then have been a *regression* — M1.1 honoured the request's `?lang` — and
+ * stamping it here is precisely what makes the re-point behaviour-preserving instead.
+ *
+ * Best-effort: a failed stamp costs the user a language preference, not their account, so it's
+ * logged and swallowed rather than allowed to break the sign-up it follows.
+ */
+const stampLocale = async (userId: string, locale: Locale): Promise<void> => {
+  try {
+    await db.update(users).set({ locale }).where(eq(users.id, userId));
+  } catch (error) {
+    console.error("[auth] failed to stamp locale", userId, error);
+  }
+};
+
+/**
+ * Where an office invite's password-set link lands (M6.2). Doubles as the **signal** that a reset
+ * token was minted for an invite rather than for someone who forgot their password: we choose this
+ * `redirectTo` when asking better-auth for the token, and read it back off the `url` in
+ * `sendResetPassword`. Carrying the intent on the link itself keeps the branch stateless — no map of
+ * in-flight invites to leak or race.
+ */
+export const OFFICE_INVITE_REDIRECT = `${env.portalUrl}/set-password?invite=1`;
+
+/** Was this reset link minted for an office invite (rather than a plain forgot-password)? */
+const isOfficeInviteLink = (url: string): boolean => url.includes(encodeURIComponent("invite=1"));
+
+/** The vendor a newly provisioned office owner belongs to — `null` if they own none. */
+const officeInviteFor = async (userId: string): Promise<{ vendorName: string } | null> => {
+  const [row] = await db
+    .select({ vendorName: vendors.name })
+    .from(vendorSubUsers)
+    .innerJoin(vendors, eq(vendors.id, vendorSubUsers.vendorId))
+    .where(and(eq(vendorSubUsers.userId, userId), eq(vendorSubUsers.isOwner, true)))
+    .limit(1);
+  return row ?? null;
+};
+
+/**
+ * Send an office-registered vendor's owner their invitation: a link that sets their first password
+ * (M6.2, ADR-0004). better-auth has no "mint a token without mailing it" API — `requestPasswordReset`
+ * always routes through `sendResetPassword` — so the invite is delivered *from* that callback, which
+ * recognises the link by {@link OFFICE_INVITE_REDIRECT}. Best-effort, like every notification: the
+ * activation it follows has already committed.
+ */
+export const sendOfficeInvite = async (email: string): Promise<void> => {
+  try {
+    await auth.api.requestPasswordReset({
+      body: { email, redirectTo: OFFICE_INVITE_REDIRECT },
+    });
+  } catch (error) {
+    console.error("[auth] failed to send office invite", email, error);
   }
 };
 
@@ -129,6 +193,29 @@ export const auth = betterAuth({
     minPasswordLength: 8,
     autoSignIn: true,
     sendResetPassword: async ({ user, url }, request) => {
+      // An office vendor's activation provisions their account and then asks better-auth for a
+      // password-set token, which arrives here as `url` (M6.2). That is the *only* link that lets the
+      // owner into the portal, so it must ride the invite email rather than a second, generic
+      // "reset your password" one the vendor never asked for — hence the branch. The signal is the
+      // `redirectTo` we passed on the way in, so this stays stateless: nothing is remembered between
+      // the request and this callback.
+      if (isOfficeInviteLink(url)) {
+        const invited = await officeInviteFor(user.id);
+        if (invited) {
+          await notify({
+            to: user.id,
+            event: "office_invite",
+            params: { url, vendorName: invited.vendorName },
+          });
+          return;
+        }
+        // The link was minted for an invite but the vendor link has vanished — fall through to the
+        // plain reset mail rather than swallowing the only credential link the user will get.
+        console.error(
+          "[auth] office-invite link with no owned vendor; sending plain reset",
+          user.id,
+        );
+      }
       await sendPasswordResetEmail({
         to: user.email,
         name: user.name,
@@ -143,12 +230,15 @@ export const auth = betterAuth({
     autoSignInAfterVerification: true,
     expiresIn: 60 * 60, // 1 hour, mirrored by the email copy
     sendVerificationEmail: async ({ user, url }, request) => {
-      await sendVerificationEmail({
-        to: user.email,
-        name: user.name,
-        url,
-        locale: localeFromRequest(request),
-      });
+      // Re-pointed onto the M6.1 service (M6.2 DoD). The copy is unchanged — the `email_verify`
+      // template reuses M1.1's own `auth.email.verify.*` keys, so the two *cannot* drift — but the
+      // mail now goes out through the one dispatcher every Phase-0 event shares.
+      //
+      // The stamp has to land first: `notify()` renders from `users.locale`, so the row must already
+      // carry the language this request asked for or the verify mail regresses to Indonesian. This is
+      // the sign-up request (`sendOnSignUp`), which is exactly where the preference is knowable.
+      await stampLocale(user.id, localeFromRequest(request));
+      await notify({ to: user.id, event: "email_verify", params: { url } });
     },
   },
 

@@ -1345,6 +1345,12 @@ export const catalogue = {
     en: "Hi {name}, the Soechi team registered {vendorName} on your behalf and that registration is now active. Use the link below to set a password and access the vendor portal.",
   },
   "notify.officeInvite.cta": { id: "Aktifkan akun Anda", en: "Set up your account" },
+
+  // Last-resort names for a master-data label that is blank in both languages (M6.2). The templates
+  // require a non-empty documentName/roleName, so a half-filled master row must degrade to a generic
+  // noun rather than ship a notification with a hole where the name should be.
+  "notify.fallback.document": { id: "dokumen tersebut", en: "the document" },
+  "notify.fallback.role": { id: "persetujuan", en: "approval" },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */

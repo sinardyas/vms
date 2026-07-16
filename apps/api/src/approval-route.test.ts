@@ -13,6 +13,7 @@ import { Hono } from "hono";
 import {
   type ApprovalRequestDetailDTO,
   type ApprovalStore,
+  type DecideNotices,
   type QueueFilter,
   approvalRoutes,
 } from "./approval-route";
@@ -37,6 +38,13 @@ const json = (method: string, body: unknown): RequestInit => ({
   headers: { "content-type": "application/json" },
   body: JSON.stringify(body),
 });
+
+/** A decision with nothing to announce — keeps these HTTP-surface tests off the notification path. */
+const EMPTY_NOTICES: DecideNotices = {
+  decision: null,
+  nextAssignment: null,
+  officeInviteEmail: null,
+};
 
 const detail: ApprovalRequestDetailDTO = {
   id: REQ,
@@ -116,12 +124,16 @@ const fakeStore = (overrides: Partial<ApprovalStore> = {}): ApprovalStore & { sp
         reason: input.reason,
       });
       spy.deciderPerms.push(input.deciderPermissions);
-      return { ok: true, detail };
+      // No notices: these tests are DB-free, and every notice the route dispatches would reach for
+      // Postgres to resolve its recipient. Dispatch is covered where the facts are — the store tests
+      // and the live smoke — while this file stays about the HTTP surface.
+      return { ok: true, detail, notices: EMPTY_NOTICES };
     },
     reassign: async (_ctx, input) => {
       spy.reassignCalls.push(input);
       return { ok: true, detail };
     },
+
     rolesForUser: async () => ["role-ap-staff", "role-ap-supervisor"],
     candidatesForStep: async () => [{ userId: ASSIGNEE, name: "Budi", email: "budi@soechi.id" }],
     ...overrides,
