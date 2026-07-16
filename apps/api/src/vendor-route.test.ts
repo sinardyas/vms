@@ -98,6 +98,7 @@ const fakeStore = (overrides: Partial<VendorStore> = {}): VendorStore & { calls:
       requiredDocMasterIds: [],
       capturedDocuments: [],
     }),
+    requiredDocuments: async () => [],
     taxIdTaken: async () => false,
     submit: async (_ctx, id) => {
       calls.push(`submit:${id}`);
@@ -148,6 +149,22 @@ describe("guard + ownership", () => {
       `/vendors/${VENDOR}`,
     );
     expect(res.status).toBe(200);
+  });
+});
+
+describe("GET /vendors/:id/required-documents", () => {
+  test("returns the required doc list for the owner", async () => {
+    const store = fakeStore({
+      requiredDocuments: async () => [
+        { documentMasterId: "d1", no: "DOC-001", nameId: "NPWP", nameEn: "NPWP", captured: true },
+      ],
+    });
+    const res = await mount(() => actor("vendor", ["view"]), store).request(
+      `/vendors/${VENDOR}/required-documents`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { no: string }[] };
+    expect(body.items[0]?.no).toBe("DOC-001");
   });
 });
 
