@@ -15,6 +15,7 @@ import { type AppEnv, requestContext } from "./context";
 import {
   type DecideFailure,
   type DocumentVerificationStore,
+  type VerificationNotifier,
   type VerifiedVersionDTO,
   documentVerificationRoutes,
 } from "./document-verification-route";
@@ -96,13 +97,17 @@ const fakeStore = (
   };
 };
 
-const mount = (a: () => Actor | null, store: DocumentVerificationStore) => {
+const mount = (
+  a: () => Actor | null,
+  store: DocumentVerificationStore,
+  notify?: VerificationNotifier,
+) => {
   const storage = { presignGet: async (k: string) => `https://minio.local/${k}?sig=x` };
   const app = new Hono<AppEnv>();
   app.use("*", requestContext(a));
   app.route(
     "/console/document-verification",
-    documentVerificationRoutes(store, storage as unknown as AttachmentStorage),
+    documentVerificationRoutes(store, storage as unknown as AttachmentStorage, notify),
   );
   return app;
 };
@@ -227,6 +232,57 @@ describe("POST reject", () => {
     );
     expect(res.status).toBe(400);
     expect(store.spy.rejectCalls).toEqual([]);
+  });
+});
+
+// M5.3 (#70): rejecting a **mandatory** doc returns the registration to Draft (the store's bounce, tested
+// live vs Postgres); the route's job is to surface that on the response and fire the notify seam. An
+// optional-doc reject does neither. (The DB bounce itself is store-level — exercised end-to-end live.)
+describe("POST reject — M5.3 return-to-draft + notify seam", () => {
+  const bounced = (): Partial<DocumentVerificationStore> => ({
+    reject: async (_ctx, versionId, reason) => ({
+      ok: true,
+      item: { ...decided, verifyStatus: "rejected", rejectReason: reason, id: versionId },
+      returnedToDraft: { vendorId: VENDOR },
+    }),
+  });
+
+  test("mandatory-doc reject → response flags returnedToDraft + fires notify", async () => {
+    const notified: { vendorId: string; versionId: string; reason: string }[] = [];
+    const res = await mount(
+      () => actor(["approve"]),
+      fakeStore(bounced()),
+      (e) => {
+        notified.push({ vendorId: e.vendorId, versionId: e.versionId, reason: e.reason });
+      },
+    ).request(
+      `/console/document-verification/versions/${VERSION}/reject`,
+      json("POST", { reason: "expired certificate" }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { returnedToDraft: boolean };
+    expect(body.returnedToDraft).toBe(true);
+    expect(notified).toEqual([
+      { vendorId: VENDOR, versionId: VERSION, reason: "expired certificate" },
+    ]);
+  });
+
+  test("optional-doc reject → returnedToDraft false + notify NOT fired", async () => {
+    let notifyCount = 0;
+    const res = await mount(
+      () => actor(["approve"]),
+      fakeStore(),
+      () => {
+        notifyCount += 1;
+      },
+    ).request(
+      `/console/document-verification/versions/${VERSION}/reject`,
+      json("POST", { reason: "blurry scan" }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { returnedToDraft: boolean };
+    expect(body.returnedToDraft).toBe(false);
+    expect(notifyCount).toBe(0);
   });
 });
 
