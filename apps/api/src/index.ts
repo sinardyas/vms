@@ -16,6 +16,7 @@ import { operationalListRoutes } from "./operational-lists-route";
 import { registrationListRoutes } from "./registration-lists-route";
 import { sessionActorResolver } from "./session-actor";
 import { vendorBanksRoutes } from "./vendor-banks-route";
+import { vendorDocumentsRoutes } from "./vendor-documents-route";
 
 const app = new Hono<AppEnv>();
 
@@ -90,5 +91,12 @@ app.route("/console/operational-lists", operationalListRoutes());
 // invariants: exactly one primary per vendor, KTP+surat when the holder ≠ company, a remark when the
 // bank's country differs from the vendor's. The shared bank-block Zod (`@vms/domain`) feeds M3.4's gate.
 app.route("/vendors", vendorBanksRoutes());
+
+// M3.3 (#44): Vendor compliance-document capture — `document_slots` + versioned `document_versions`,
+// gated on `vendors`. Uploads land in MinIO through the shared M3.2 storage seam (validated, not gated,
+// ADR-0013); reads are signed URLs. Re-uploading appends a version and moves the slot pointer (the M5.3
+// shape). Issue/expiry + verify status are the verifier's at M5, so capture never records them. The
+// shared `@vms/domain` doc block + completeness predicate feed M3.4's submit gate.
+app.route("/vendors", vendorDocumentsRoutes());
 
 export default { port: env.port, fetch: app.fetch };
