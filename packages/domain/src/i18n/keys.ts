@@ -802,6 +802,45 @@ export const catalogue = {
     id: "Pendaftaran Anda masih berupa draft. Lengkapi dan kirim saat siap.",
     en: "Your registration is still a draft. Complete and submit it when ready.",
   },
+
+  // --- Console office registration (M3.6, #47) — staff register a vendor on-behalf → Pending-HOD ---
+  "console.vendorReg.landingTitle": {
+    id: "Pendaftaran Vendor oleh Kantor",
+    en: "Office Vendor Registration",
+  },
+  "console.vendorReg.landingBody": {
+    id: "Daftarkan vendor atas nama mereka menggunakan validasi yang sama dengan portal vendor.",
+    en: "Register a vendor on their behalf using the same validation as the vendor portal.",
+  },
+  "console.vendorReg.hodNotice": {
+    id: "Vendor yang didaftarkan oleh staf kantor memerlukan persetujuan Manajer / HOD sebelum diaktifkan.",
+    en: "Vendors registered by office staff require Manager / HOD approval before they are activated.",
+  },
+  "console.vendorReg.registerCta": { id: "Daftarkan vendor", en: "Register vendor" },
+  "console.vendorReg.startTitle": { id: "Daftarkan vendor baru", en: "Register a new vendor" },
+  "console.vendorReg.startBody": {
+    id: "Pilih asal vendor dan nama perusahaan untuk memulai draft, lalu lengkapi profil, bank, dan dokumen.",
+    en: "Pick the vendor's origin and company name to start a draft, then complete profile, banks, and documents.",
+  },
+  "console.vendorReg.create": { id: "Mulai pendaftaran", en: "Start registration" },
+  "console.vendorReg.submit": { id: "Kirim untuk persetujuan HOD", en: "Submit for HOD approval" },
+  "console.vendorReg.reviewNote": {
+    id: "Setelah dikirim, vendor menunggu persetujuan HOD sebelum aktif dan tidak dapat diedit di sini.",
+    en: "Once submitted, the vendor awaits HOD approval before activation and can no longer be edited here.",
+  },
+  "console.vendorReg.successTitle": {
+    id: "Terkirim untuk persetujuan HOD",
+    en: "Submitted for HOD approval",
+  },
+  "console.vendorReg.successBody": {
+    id: "Vendor telah didaftarkan dan menunggu persetujuan Manajer / HOD sebelum diaktifkan.",
+    en: "The vendor has been registered and is awaiting Manager / HOD approval before activation.",
+  },
+  "console.vendorReg.registerAnother": {
+    id: "Daftarkan vendor lain",
+    en: "Register another vendor",
+  },
+  "console.vendorReg.backToStart": { id: "Batalkan", en: "Cancel" },
 } as const satisfies Record<string, MessageEntry>;
 
 /** Every valid message key — a typo here is a compile error. */
