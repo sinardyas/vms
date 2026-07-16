@@ -31,9 +31,7 @@ import {
   type DB,
   approvalRequestSteps,
   approvalRequests,
-  categoryDocumentRequirements,
   db as defaultDb,
-  documentMaster,
   documentSlots,
   documentVersions,
   roles,
@@ -54,7 +52,6 @@ import {
   isEditTrigger,
   notFoundError,
   parseWith,
-  requiredDocumentSet,
   validationError,
 } from "@vms/domain";
 import { and, asc, eq, inArray } from "drizzle-orm";
@@ -65,6 +62,7 @@ import { writeAudit } from "./audit";
 import type { AppEnv } from "./context";
 import { sendError } from "./http-error";
 import { requirePermission } from "./rbac";
+import { requiredDocMasterIdsForVendor } from "./required-documents";
 import { applyVendorChange, discardVendorChange } from "./vendor-change";
 
 /** The approval engine gates on its own RBAC module (ADR-0012). */
@@ -255,48 +253,18 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
 
   /**
    * The M5.2 activation gate for a vendor: is every mandatory doc Verified? Composes the required set
-   * (origin ∪ single-category, the same matrix the M3.4 submit gate reads) then measures each slot's
-   * current-version verify state against it. Pure judgement lives in `@vms/domain`
-   * ({@link activationGate}); this only gathers the data. Reused by the `activate` block in `decide` and
-   * by `buildDetail` (so the console can show the gate before an approver decides).
+   * (origin ∪ single-category, {@link requiredDocMasterIdsForVendor} — the same set the M5.3 reject→Draft
+   * bounce reads, so the two never drift) then measures each slot's current-version verify state against
+   * it. Pure judgement lives in `@vms/domain` ({@link activationGate}); this only gathers the data.
+   * Reused by the `activate` block in `decide` and by `buildDetail` (so the console can show the gate
+   * before an approver decides).
    */
   const computeActivationGate = async (
     handle: ReadHandle,
     vendorId: string,
   ): Promise<ActivationGate> => {
-    const [vendor] = await handle
-      .select({ origin: vendors.origin, categoryId: vendors.categoryId })
-      .from(vendors)
-      .where(eq(vendors.id, vendorId))
-      .limit(1);
-    if (!vendor) return activationGate([], []); // vendor gone — decide already guards existence
-
     // Required set = origin docs ∪ this category's docs (ADR-0013), composed from the matrix.
-    const masterRows = await handle
-      .select({
-        id: documentMaster.id,
-        appliesTo: documentMaster.appliesTo,
-        mandatory: documentMaster.mandatory,
-        enabled: documentMaster.enabled,
-      })
-      .from(documentMaster);
-    const requirementRows = await handle
-      .select({
-        categoryId: categoryDocumentRequirements.categoryId,
-        documentMasterId: categoryDocumentRequirements.documentMasterId,
-        mandatory: categoryDocumentRequirements.mandatory,
-        active: categoryDocumentRequirements.active,
-        enabled: documentMaster.enabled,
-      })
-      .from(categoryDocumentRequirements)
-      .innerJoin(
-        documentMaster,
-        eq(categoryDocumentRequirements.documentMasterId, documentMaster.id),
-      );
-    const requiredDocMasterIds = requiredDocumentSet(
-      { origin: vendor.origin, categoryId: vendor.categoryId },
-      { master: masterRows, categoryRequirements: requirementRows },
-    );
+    const requiredDocMasterIds = await requiredDocMasterIdsForVendor(handle, vendorId);
 
     // Each slot's current version's verify state — a missing version (left-join null) reads as not-yet.
     const slotRows = await handle
