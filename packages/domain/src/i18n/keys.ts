@@ -587,6 +587,23 @@ export const catalogue = {
     en: "Your account already has a vendor registration — continue the existing one.",
   },
 
+  // --- Approval workflow engine (M4.2, #57, ADR-0005/0012) ---
+  // A decision was attempted on a request that is no longer Pending (already approved/rejected/recalled).
+  "error.approval.notPending": {
+    id: "Permintaan persetujuan ini sudah selesai dan tidak dapat diputuskan lagi.",
+    en: "This approval request is already resolved and can no longer be decided.",
+  },
+  // Reject requires a reason so the submitter knows what to fix on resume (ADR-0005: reject with reasons).
+  "error.approval.reasonRequired": {
+    id: "Alasan penolakan wajib diisi.",
+    en: "A reason is required to reject.",
+  },
+  // Reassign targeted a step that isn't the request's current open step (already decided or not reached).
+  "error.approval.stepNotActionable": {
+    id: "Langkah ini bukan langkah aktif yang sedang menunggu keputusan.",
+    en: "This step is not the current step awaiting a decision.",
+  },
+
   // --- Portal UI chrome (M3.5, #46) — bilingual labels for the self-registration portal. ---
   "portal.shell.subtitle": { id: "Portal Vendor", en: "Vendor Portal" },
   "portal.nav.dashboard": { id: "Beranda", en: "Dashboard" },
