@@ -19,6 +19,7 @@ import {
   FileText,
   IdentificationCard,
   MagnifyingGlass,
+  PencilSimple,
   Plus,
   Warning,
 } from "@phosphor-icons/react";
@@ -68,8 +69,9 @@ import {
   useToast,
   vendorStatusTone,
 } from "@vms/ui";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { type ChangeRequestDTO, changesApi } from "../lib/approvals";
+import type { RaiseChangeInput } from "../lib/approvals";
 import {
   type AuditRowDTO,
   type BankDTO,
@@ -463,6 +465,8 @@ function VendorProfile({ vendorId, onBack }: { vendorId: string; onBack: () => v
   const { can } = useCapabilities();
   const [vendor, setVendor] = useState<VendorDTO | null>(null);
   const [error, setError] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+  const [changeKind, setChangeKind] = useState<ChangeKind | null>(null);
   const canAudit = can("audit", "view");
   const canEdit = can("vendors", "edit");
 
@@ -539,50 +543,87 @@ function VendorProfile({ vendorId, onBack }: { vendorId: string; onBack: () => v
               )}
             </div>
           </div>
+          {/* Raise a post-activation change (M4.6b). Hidden once a change is in flight — the one-per-vendor
+              lock (ADR-0010) forbids a second, and the pending-change banner is showing instead. */}
+          {vendor.status === "active" && canEdit && !vendor.changePending && !changeKind && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="shrink-0"
+              onClick={() => setChoosing(true)}
+            >
+              <PencilSimple weight="bold" />
+              {t("console.vendorProfile.requestChange")}
+            </Button>
+          )}
         </CardContent>
       </Card>
 
-      {vendor.changePending && (
-        <PendingChangeBanner vendorId={vendorId} canEdit={canEdit} onCancelled={reload} />
+      {changeKind ? (
+        <ChangeEditor
+          vendor={vendor}
+          kind={changeKind}
+          onRaised={() => {
+            setChangeKind(null);
+            reload();
+          }}
+          onCancel={() => setChangeKind(null)}
+        />
+      ) : (
+        <>
+          {vendor.changePending && (
+            <PendingChangeBanner vendorId={vendorId} canEdit={canEdit} onCancelled={reload} />
+          )}
+
+          <Tabs defaultValue="details">
+            <TabsList>
+              <TabsTrigger value="details">
+                <IdentificationCard weight="bold" />
+                {t("console.vendorProfile.tabDetails")}
+              </TabsTrigger>
+              <TabsTrigger value="documents">
+                <FileText weight="bold" />
+                {t("console.vendorProfile.tabDocuments")}
+              </TabsTrigger>
+              <TabsTrigger value="bank">
+                <Bank weight="bold" />
+                {t("console.vendorProfile.tabBank")}
+              </TabsTrigger>
+              {canAudit && (
+                <TabsTrigger value="activity">
+                  <ClockCounterClockwise weight="bold" />
+                  {t("console.vendorProfile.tabActivity")}
+                </TabsTrigger>
+              )}
+            </TabsList>
+
+            <TabsContent value="details">
+              <DetailsTab vendor={vendor} />
+            </TabsContent>
+            <TabsContent value="documents">
+              <DocumentsTab vendorId={vendorId} />
+            </TabsContent>
+            <TabsContent value="bank">
+              <BankTab vendorId={vendorId} />
+            </TabsContent>
+            {canAudit && (
+              <TabsContent value="activity">
+                <ActivityTab vendorId={vendorId} />
+              </TabsContent>
+            )}
+          </Tabs>
+        </>
       )}
 
-      <Tabs defaultValue="details">
-        <TabsList>
-          <TabsTrigger value="details">
-            <IdentificationCard weight="bold" />
-            {t("console.vendorProfile.tabDetails")}
-          </TabsTrigger>
-          <TabsTrigger value="documents">
-            <FileText weight="bold" />
-            {t("console.vendorProfile.tabDocuments")}
-          </TabsTrigger>
-          <TabsTrigger value="bank">
-            <Bank weight="bold" />
-            {t("console.vendorProfile.tabBank")}
-          </TabsTrigger>
-          {canAudit && (
-            <TabsTrigger value="activity">
-              <ClockCounterClockwise weight="bold" />
-              {t("console.vendorProfile.tabActivity")}
-            </TabsTrigger>
-          )}
-        </TabsList>
-
-        <TabsContent value="details">
-          <DetailsTab vendor={vendor} />
-        </TabsContent>
-        <TabsContent value="documents">
-          <DocumentsTab vendorId={vendorId} />
-        </TabsContent>
-        <TabsContent value="bank">
-          <BankTab vendorId={vendorId} />
-        </TabsContent>
-        {canAudit && (
-          <TabsContent value="activity">
-            <ActivityTab vendorId={vendorId} />
-          </TabsContent>
-        )}
-      </Tabs>
+      {choosing && (
+        <ChangeKindChooser
+          onClose={() => setChoosing(false)}
+          onPick={(k) => {
+            setChoosing(false);
+            setChangeKind(k);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -652,6 +693,307 @@ function PendingChangeBanner({
           </Button>
         )}
       </CardContent>
+    </Card>
+  );
+}
+
+/* ── Post-activation change: raise an edit (M4.6b, #67) ───────────────────────────────────────── */
+
+/** The two change kinds staff can raise on an Active vendor (ADR-0009 routes them apart). */
+type ChangeKind = "non_bank" | "bank";
+
+/**
+ * Chooser — "What would you like to change?" Picks the kind before the editor opens, because the two
+ * route differently (bank → AP Manager, non-bank → AP Supervisor) and drive different capture surfaces.
+ */
+function ChangeKindChooser({
+  onPick,
+  onClose,
+}: { onPick: (kind: ChangeKind) => void; onClose: () => void }) {
+  const t = useT();
+  const options: {
+    kind: ChangeKind;
+    icon: ReactNode;
+    titleKey: MessageKey;
+    subKey: MessageKey;
+  }[] = [
+    {
+      kind: "non_bank",
+      icon: <IdentificationCard weight="bold" className="text-primary" />,
+      titleKey: "console.vendorProfile.changeKindProfile",
+      subKey: "console.vendorProfile.changeKindProfileSub",
+    },
+    {
+      kind: "bank",
+      icon: <Bank weight="bold" className="text-primary" />,
+      titleKey: "console.vendorProfile.changeKindBank",
+      subKey: "console.vendorProfile.changeKindBankSub",
+    },
+  ];
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("console.vendorProfile.changeKindTitle")}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          {options.map((o) => (
+            <button
+              type="button"
+              key={o.kind}
+              onClick={() => onPick(o.kind)}
+              className="flex items-center gap-3 rounded-xl border-2 border-input p-4 text-left transition-colors hover:border-primary hover:bg-primary/5"
+            >
+              {o.icon}
+              <span>
+                <span className="block text-sm font-semibold text-foreground">{t(o.titleKey)}</span>
+                <span className="block text-xs text-muted-foreground">{t(o.subKey)}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * The change-raising editor. Frames the reused capture UI for one kind and owns the POST to
+ * `/vendors/:id/change-requests`: a **non-bank** change reuses {@link CompanySection} (full profile
+ * replacement, pre-filled from the live record); a **bank** change uses {@link BankBlockEditor} (full
+ * block replacement). On success the vendor gains its `change_pending` flag → the caller reloads and the
+ * pending-change banner takes over, the record staying Active. The API guards (422 completeness /
+ * bank-remark, 409 one-pending lock) surface localized via {@link VendorApiError}; on failure the section
+ * keeps its state so staff can fix and retry.
+ */
+function ChangeEditor({
+  vendor,
+  kind,
+  onRaised,
+  onCancel,
+}: {
+  vendor: VendorDTO;
+  kind: ChangeKind;
+  onRaised: () => void;
+  onCancel: () => void;
+}) {
+  const { locale } = useLocale();
+  const t = useT();
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+
+  // One raise path for both kinds: success toasts + hands back (the banner takes over); a failure toasts
+  // the localized reason and is swallowed here so the editing surface stays put for a retry.
+  const raise = async (change: RaiseChangeInput) => {
+    setBusy(true);
+    try {
+      await changesApi.raise(locale, vendor.id, change);
+      toast({ title: t("console.vendorProfile.changeSubmitted"), tone: "success" });
+      onRaised();
+    } catch (e) {
+      toast({ title: e instanceof VendorApiError ? e.message : String(e), tone: "danger" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-foreground">
+            {t(
+              kind === "bank"
+                ? "console.vendorProfile.changeBankTitle"
+                : "console.vendorProfile.changeProfileTitle",
+            )}
+          </h2>
+          <p className="text-xs text-muted-foreground">{t("console.vendorProfile.changeIntro")}</p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
+          <ArrowLeft weight="bold" />
+          {t("portal.common.cancel")}
+        </Button>
+      </div>
+
+      {kind === "non_bank" ? (
+        <CompanySection
+          vendor={vendor}
+          onSaved={() => {}}
+          raise={{ onSubmit: (profile) => raise({ kind: "non_bank", profile }) }}
+        />
+      ) : (
+        <BankBlockEditor
+          vendor={vendor}
+          busy={busy}
+          onSubmit={(banks) => raise({ kind: "bank", banks })}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Map a composed bank account to the change diff's account shape — nulls/blanks dropped (optionals absent). */
+const bankToInput = (b: BankDTO, isPrimary: boolean): Record<string, unknown> => {
+  const out: Record<string, unknown> = {
+    bankName: b.bankName,
+    accountNo: b.accountNo,
+    holderName: b.holderName,
+    currencyIds: b.currencyIds,
+    holderSameAsCompany: b.holderSameAsCompany,
+    isPrimary,
+  };
+  const optional: (keyof BankDTO)[] = [
+    "bankId",
+    "branch",
+    "description",
+    "swift",
+    "iban",
+    "bankCountryId",
+    "differsFromCompanyRemark",
+    "proofFileId",
+    "ktpFileId",
+    "suratPernyataanFileId",
+  ];
+  for (const key of optional) {
+    const value = b[key];
+    if (value !== null && value !== undefined && value !== "") out[key] = value;
+  }
+  return out;
+};
+
+/**
+ * Bank-block editor for a post-activation change. Loads the vendor's current accounts into local state,
+ * lets staff add / edit / remove and pick the single primary, then POSTs the whole replacement set as one
+ * `{kind:"bank"}` diff — the live record is frozen (M4.4), so nothing is written until the change is
+ * approved. Existing accounts carry their attachment file ids; a new account is company-held (fresh
+ * holder-proof attachments can't be uploaded post-activation). The block needs ≥1 account and exactly one
+ * primary before submit (the shared Zod + API re-check both, surfacing any 422 localized).
+ */
+function BankBlockEditor({
+  vendor,
+  busy,
+  onSubmit,
+}: {
+  vendor: VendorDTO;
+  busy: boolean;
+  onSubmit: (banks: Record<string, unknown>[]) => Promise<void>;
+}) {
+  const { locale } = useLocale();
+  const t = useT();
+  const lists = useLists();
+  const [banks, setBanks] = useState<BankDTO[] | null>(null);
+  const [primaryIdx, setPrimaryIdx] = useState(0);
+  // null = dialog closed · "new" = add · number = edit that index.
+  const [editing, setEditing] = useState<number | "new" | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    banksApi
+      .list(locale, vendor.id)
+      .then((b) => {
+        if (!alive) return;
+        setBanks(b);
+        const p = b.findIndex((x) => x.isPrimary);
+        setPrimaryIdx(p >= 0 ? p : 0);
+      })
+      .catch(() => alive && setBanks([]));
+    return () => {
+      alive = false;
+    };
+  }, [locale, vendor.id]);
+
+  const upsert = (bank: BankDTO) =>
+    setBanks((prev) => {
+      const list = prev ?? [];
+      if (editing === "new") return [...list, bank];
+      if (typeof editing === "number") return list.map((b, i) => (i === editing ? bank : b));
+      return list;
+    });
+
+  const remove = (i: number) => {
+    setBanks((prev) => (prev ?? []).filter((_, idx) => idx !== i));
+    setPrimaryIdx((p) => (i === p ? 0 : i < p ? p - 1 : p));
+  };
+
+  const currencyCodes = (ids: string[]): string =>
+    ids.map((id) => lists?.currencies.find((c) => c.id === id)?.code ?? id).join(", ");
+
+  const submit = () => onSubmit((banks ?? []).map((b, i) => bankToInput(b, i === primaryIdx)));
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between">
+        <CardTitle>{t("portal.bank.title")}</CardTitle>
+        <Button size="sm" onClick={() => setEditing("new")}>
+          <Plus weight="bold" />
+          {t("console.vendorProfile.changeBankAdd")}
+        </Button>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {banks === null && (
+          <p className="text-sm text-muted-foreground">{t("portal.common.loading")}</p>
+        )}
+        {banks !== null && banks.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            {t("console.vendorProfile.changeBankEmpty")}
+          </p>
+        )}
+        {(banks ?? []).map((b, i) => (
+          <div
+            key={b.id ?? `new-${i}`}
+            className="flex items-center justify-between gap-3 rounded-xl border border-input p-4"
+          >
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="radio"
+                name="change-primary"
+                className="mt-1"
+                checked={i === primaryIdx}
+                onChange={() => setPrimaryIdx(i)}
+              />
+              <span>
+                <span className="flex items-center gap-2">
+                  <span className="font-semibold text-foreground">{b.bankName}</span>
+                  {i === primaryIdx && (
+                    <StatusPill tone="info">{t("portal.bank.primaryBadge")}</StatusPill>
+                  )}
+                </span>
+                <span className="mt-0.5 block text-sm text-muted-foreground">
+                  {b.accountNo} · {b.holderName}
+                  {b.currencyIds.length > 0 ? ` · ${currencyCodes(b.currencyIds)}` : ""}
+                </span>
+              </span>
+            </label>
+            <div className="flex shrink-0 gap-1">
+              <Button variant="ghost" size="sm" onClick={() => setEditing(i)}>
+                {t("console.vendorProfile.changeBankEdit")}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => remove(i)}>
+                {t("portal.common.remove")}
+              </Button>
+            </div>
+          </div>
+        ))}
+        <div className="pt-2">
+          <Button onClick={submit} disabled={busy || banks === null || banks.length === 0}>
+            {t("console.vendorProfile.changeSubmit")}
+          </Button>
+        </div>
+      </CardContent>
+      {editing !== null && (
+        <BankDialog
+          vendor={vendor}
+          currencies={lists?.currencies ?? []}
+          countries={lists?.countries ?? []}
+          onClose={() => setEditing(null)}
+          onSaved={() => {}}
+          compose={{
+            initial: typeof editing === "number" ? banks?.[editing] : undefined,
+            onCompose: upsert,
+          }}
+        />
+      )}
     </Card>
   );
 }
@@ -1131,7 +1473,18 @@ const TEXT = (v: string | number | null): string =>
 function CompanySection({
   vendor,
   onSaved,
-}: { vendor: VendorDTO; onSaved: (v: VendorDTO) => void }) {
+  raise,
+}: {
+  vendor: VendorDTO;
+  onSaved: (v: VendorDTO) => void;
+  /**
+   * Post-activation change mode (M4.6b, #67). When set, the form assembles the same profile but instead
+   * of writing the (frozen) live record it hands the fields to `onSubmit`, which POSTs them as a non-bank
+   * change diff. The submit button becomes "Submit change request"; the required stars are unchanged, so
+   * the raised profile must still satisfy the per-origin set (the API rechecks `missingProfileFields`).
+   */
+  raise?: { onSubmit: (profile: Record<string, string | number>) => Promise<void> };
+}) {
   const { locale } = useLocale();
   const t = useT();
   const { toast } = useToast();
@@ -1172,25 +1525,37 @@ function CompanySection({
 
   const set = (k: string) => (value: string) => setForm((f) => ({ ...f, [k]: value }));
 
-  const save = async () => {
-    setSaving(true);
-    // `source: "office"` satisfies the lenient Draft schema; the server ignores it (source is fixed at
-    // create by the actor kind) but Zod requires the field, so we send the vendor's own value.
-    const payload: VendorDraftPayload = {
-      origin: vendor.origin,
-      source: "office",
-      name: form.name || vendor.name,
-    };
+  // The filled profile fields (name always; blanks skipped, yearFounded coerced) — the shape both a Draft
+  // save and a non-bank change diff carry, minus origin/source (lifecycle-owned; the server pins them).
+  const assembleProfile = (): Record<string, string | number> => {
+    const out: Record<string, string | number> = { name: form.name || vendor.name };
     for (const [k, v] of Object.entries(form)) {
       if (k === "name") continue;
       const trimmed = v.trim();
       if (!trimmed) continue;
-      payload[k] = k === "yearFounded" ? Number(trimmed) : trimmed;
+      out[k] = k === "yearFounded" ? Number(trimmed) : trimmed;
     }
+    return out;
+  };
+
+  const save = async () => {
+    setSaving(true);
     try {
-      const updated = await vendorApi.update(locale, vendor.id, payload);
-      onSaved(updated);
-      toast({ title: t("portal.reg.draftSaved"), tone: "success" });
+      if (raise) {
+        await raise.onSubmit(assembleProfile());
+      } else {
+        // `source: "office"` satisfies the lenient Draft schema; the server ignores it (source is fixed
+        // at create by the actor kind) but Zod requires the field, so we send the vendor's own value.
+        const payload: VendorDraftPayload = {
+          origin: vendor.origin,
+          source: "office",
+          ...assembleProfile(),
+          name: form.name || vendor.name,
+        };
+        const updated = await vendorApi.update(locale, vendor.id, payload);
+        onSaved(updated);
+        toast({ title: t("portal.reg.draftSaved"), tone: "success" });
+      }
     } catch (e) {
       toast({ title: e instanceof VendorApiError ? e.message : String(e), tone: "danger" });
     } finally {
@@ -1350,7 +1715,7 @@ function CompanySection({
 
       <div>
         <Button onClick={save} disabled={saving}>
-          {t("portal.common.saveDraft")}
+          {t(raise ? "console.vendorProfile.changeSubmit" : "portal.common.saveDraft")}
         </Button>
       </div>
     </div>
@@ -1440,24 +1805,37 @@ function BankDialog({
   countries,
   onClose,
   onSaved,
+  compose,
 }: {
   vendor: VendorDTO;
   currencies: CurrencyRow[];
   countries: CountryRow[];
   onClose: () => void;
   onSaved: () => void;
+  /**
+   * Post-activation change mode (M4.6b, #67). When set, the dialog composes a bank into a local block —
+   * no live write, no fresh attachment upload (that route is frozen once a vendor leaves Draft, M4.4).
+   * `initial` pre-fills for an edit (carrying its existing attachment file ids); a new account is
+   * company-held (holder-proof attachments can't be added post-activation). `onCompose` receives the
+   * finished account for the {@link BankBlockEditor} to append/replace; the whole set POSTs as a diff.
+   */
+  compose?: { initial?: BankDTO; onCompose: (bank: BankDTO) => void };
 }) {
   const { locale } = useLocale();
   const t = useT();
   const { toast } = useToast();
-  const [form, setForm] = useState<BankDTO>({
-    bankName: "",
-    accountNo: "",
-    holderName: "",
-    currencyIds: [],
-    holderSameAsCompany: true,
-    isPrimary: true,
-  });
+  const [form, setForm] = useState<BankDTO>(() =>
+    compose?.initial
+      ? { ...compose.initial }
+      : {
+          bankName: "",
+          accountNo: "",
+          holderName: "",
+          currencyIds: [],
+          holderSameAsCompany: true,
+          isPrimary: true,
+        },
+  );
   const [ktpFile, setKtpFile] = useState<File | null>(null);
   const [suratFile, setSuratFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1473,6 +1851,13 @@ function BankDialog({
     }));
 
   const save = async () => {
+    // Compose mode: hand the account to the block editor as-is (its file ids, if any, ride along) — no
+    // live write, no upload. The whole block POSTs later as one change diff.
+    if (compose) {
+      compose.onCompose({ ...form });
+      onClose();
+      return;
+    }
     setSaving(true);
     try {
       const input: BankDTO = { ...form };
@@ -1498,7 +1883,9 @@ function BankDialog({
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{t("portal.bank.add")}</DialogTitle>
+          <DialogTitle>
+            {t(compose?.initial ? "console.vendorProfile.changeBankEdit" : "portal.bank.add")}
+          </DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={t("portal.bank.bankName")} required>
@@ -1591,52 +1978,69 @@ function BankDialog({
           </div>
         </div>
 
-        <div className="mt-2 flex flex-col gap-2">
-          <span className="text-sm font-semibold text-foreground">
-            {t("portal.bank.holderSameQuestion")}
-          </span>
-          <div className="flex gap-3">
-            {[
-              { same: true, labelKey: "portal.bank.holderSameYes" as MessageKey },
-              { same: false, labelKey: "portal.bank.holderSameNo" as MessageKey },
-            ].map((opt) => (
-              <button
-                type="button"
-                key={String(opt.same)}
-                onClick={() => set("holderSameAsCompany", opt.same)}
-                className={`flex-1 rounded-xl border-2 p-3 text-sm font-semibold transition-colors ${
-                  form.holderSameAsCompany === opt.same
-                    ? "border-primary bg-primary/5 text-foreground"
-                    : "border-input text-muted-foreground"
-                }`}
-              >
-                {t(opt.labelKey)}
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* Live capture (Draft): pick the holder and upload holder-proof. In a post-activation change the
+            attachment route is frozen, so the holder relationship is fixed at its current value and no
+            uploads are offered — only a note explaining it. */}
+        {!compose && (
+          <>
+            <div className="mt-2 flex flex-col gap-2">
+              <span className="text-sm font-semibold text-foreground">
+                {t("portal.bank.holderSameQuestion")}
+              </span>
+              <div className="flex gap-3">
+                {[
+                  { same: true, labelKey: "portal.bank.holderSameYes" as MessageKey },
+                  { same: false, labelKey: "portal.bank.holderSameNo" as MessageKey },
+                ].map((opt) => (
+                  <button
+                    type="button"
+                    key={String(opt.same)}
+                    onClick={() => set("holderSameAsCompany", opt.same)}
+                    className={`flex-1 rounded-xl border-2 p-3 text-sm font-semibold transition-colors ${
+                      form.holderSameAsCompany === opt.same
+                        ? "border-primary bg-primary/5 text-foreground"
+                        : "border-input text-muted-foreground"
+                    }`}
+                  >
+                    {t(opt.labelKey)}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {!form.holderSameAsCompany && (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={t("portal.bank.ktp")} required>
-              {(p) => (
-                <Input
-                  {...p}
-                  type="file"
-                  onChange={(e) => setKtpFile(e.target.files?.[0] ?? null)}
-                />
-              )}
-            </Field>
-            <Field label={t("portal.bank.surat")} required>
-              {(p) => (
-                <Input
-                  {...p}
-                  type="file"
-                  onChange={(e) => setSuratFile(e.target.files?.[0] ?? null)}
-                />
-              )}
-            </Field>
-          </div>
+            {!form.holderSameAsCompany && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={t("portal.bank.ktp")} required>
+                  {(p) => (
+                    <Input
+                      {...p}
+                      type="file"
+                      onChange={(e) => setKtpFile(e.target.files?.[0] ?? null)}
+                    />
+                  )}
+                </Field>
+                <Field label={t("portal.bank.surat")} required>
+                  {(p) => (
+                    <Input
+                      {...p}
+                      type="file"
+                      onChange={(e) => setSuratFile(e.target.files?.[0] ?? null)}
+                    />
+                  )}
+                </Field>
+              </div>
+            )}
+          </>
+        )}
+
+        {compose && (
+          <p className="mt-2 rounded-xl border border-input bg-secondary/40 p-3 text-xs text-muted-foreground">
+            {t(
+              form.holderSameAsCompany
+                ? "console.vendorProfile.changeBankHolderNote"
+                : "console.vendorProfile.changeBankAttachRetained",
+            )}
+          </p>
         )}
 
         <DialogFooter>
