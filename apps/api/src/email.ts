@@ -25,7 +25,84 @@ const mailer = (): Transporter => {
   return transport;
 };
 
-/** A rendered link email: heading + explanatory body + a CTA button, with a copy-paste fallback. */
+/**
+ * An email whose copy is **already rendered** into the recipient's locale: heading + explanatory
+ * body + a CTA button, with a copy-paste fallback.
+ *
+ * Strings, not keys — so the caller owns rendering. The auth senders below translate their own keys;
+ * the M6.1 notification service renders through `@vms/domain`'s template catalogue instead. Both
+ * share this one shell, so every email the system sends looks alike.
+ *
+ * `footerLines` are the small print under the CTA (e.g. "this link expires in 60 minutes"), which
+ * applies to a tokenized auth link but not to a notification.
+ */
+export type RenderedEmail = {
+  readonly to: string;
+  readonly locale: Locale;
+  readonly subject: string;
+  readonly heading: string;
+  readonly body: string;
+  readonly cta: string;
+  readonly url: string;
+  readonly footerLines?: readonly string[];
+};
+
+/** Minimal, client-agnostic HTML — inline styles only, since email clients strip <style> blocks. */
+const renderHtml = (e: RenderedEmail): string => {
+  const t = (key: MessageKey, params?: Record<string, string | number>) =>
+    translate(key, e.locale, params);
+  const footer = (e.footerLines ?? [])
+    .map((line) => `<p style="margin:0 0 8px;font-size:13px;color:#666;">${line}</p>`)
+    .join("\n        ");
+  return `<!doctype html>
+<html lang="${e.locale}">
+  <body style="margin:0;padding:24px;background:#f5f6f8;font-family:Inter,Arial,sans-serif;color:#1a1a1a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;">
+      <tr><td>
+        <h1 style="margin:0 0 16px;font-size:20px;color:#002d5a;">${e.heading}</h1>
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.5;">${e.body}</p>
+        <p style="margin:0 0 24px;">
+          <a href="${e.url}" style="display:inline-block;background:#0071e3;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:15px;font-weight:600;">${e.cta}</a>
+        </p>
+        <p style="margin:0 0 8px;font-size:13px;color:#666;">${t("auth.email.linkFallback")}</p>
+        <p style="margin:0 0 24px;font-size:13px;word-break:break-all;"><a href="${e.url}" style="color:#0071e3;">${e.url}</a></p>
+        ${footer}
+        <p style="margin:0;font-size:13px;color:#666;">${t("auth.email.signature")}</p>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+};
+
+/** Plain-text alternative for clients that don't render HTML. */
+const renderText = (e: RenderedEmail): string => {
+  const t = (key: MessageKey, params?: Record<string, string | number>) =>
+    translate(key, e.locale, params);
+  return [
+    e.heading,
+    "",
+    e.body,
+    "",
+    `${e.cta}: ${e.url}`,
+    "",
+    ...(e.footerLines ?? []),
+    "",
+    t("auth.email.signature"),
+  ].join("\n");
+};
+
+/** Send one already-rendered email through the shared SMTP transport. */
+export const sendRenderedEmail = async (e: RenderedEmail): Promise<void> => {
+  await mailer().sendMail({
+    from: env.smtpFrom,
+    to: e.to,
+    subject: e.subject,
+    html: renderHtml(e),
+    text: renderText(e),
+  });
+};
+
+/** A tokenized auth link email, rendered from catalogue keys with an expiry note in the footer. */
 type LinkEmail = {
   readonly to: string;
   readonly locale: Locale;
@@ -38,56 +115,18 @@ type LinkEmail = {
   readonly expiryMinutes: number;
 };
 
-/** Minimal, client-agnostic HTML — inline styles only, since email clients strip <style> blocks. */
-const renderHtml = (e: LinkEmail): string => {
+const sendLinkEmail = (e: LinkEmail): Promise<void> => {
   const t = (key: MessageKey, params?: Record<string, string | number>) =>
     translate(key, e.locale, params);
-  return `<!doctype html>
-<html lang="${e.locale}">
-  <body style="margin:0;padding:24px;background:#f5f6f8;font-family:Inter,Arial,sans-serif;color:#1a1a1a;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;">
-      <tr><td>
-        <h1 style="margin:0 0 16px;font-size:20px;color:#002d5a;">${t(e.headingKey)}</h1>
-        <p style="margin:0 0 24px;font-size:15px;line-height:1.5;">${t(e.bodyKey, { name: e.name })}</p>
-        <p style="margin:0 0 24px;">
-          <a href="${e.url}" style="display:inline-block;background:#0071e3;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:15px;font-weight:600;">${t(e.ctaKey)}</a>
-        </p>
-        <p style="margin:0 0 8px;font-size:13px;color:#666;">${t("auth.email.linkFallback")}</p>
-        <p style="margin:0 0 24px;font-size:13px;word-break:break-all;"><a href="${e.url}" style="color:#0071e3;">${e.url}</a></p>
-        <p style="margin:0 0 8px;font-size:13px;color:#666;">${t("auth.email.expiry", { minutes: e.expiryMinutes })}</p>
-        <p style="margin:0 0 24px;font-size:13px;color:#666;">${t("auth.email.ignore")}</p>
-        <p style="margin:0;font-size:13px;color:#666;">${t("auth.email.signature")}</p>
-      </td></tr>
-    </table>
-  </body>
-</html>`;
-};
-
-/** Plain-text alternative for clients that don't render HTML. */
-const renderText = (e: LinkEmail): string => {
-  const t = (key: MessageKey, params?: Record<string, string | number>) =>
-    translate(key, e.locale, params);
-  return [
-    t(e.headingKey),
-    "",
-    t(e.bodyKey, { name: e.name }),
-    "",
-    `${t(e.ctaKey)}: ${e.url}`,
-    "",
-    t("auth.email.expiry", { minutes: e.expiryMinutes }),
-    t("auth.email.ignore"),
-    "",
-    t("auth.email.signature"),
-  ].join("\n");
-};
-
-const sendLinkEmail = async (e: LinkEmail): Promise<void> => {
-  await mailer().sendMail({
-    from: env.smtpFrom,
+  return sendRenderedEmail({
     to: e.to,
-    subject: translate(e.subjectKey, e.locale),
-    html: renderHtml(e),
-    text: renderText(e),
+    locale: e.locale,
+    subject: t(e.subjectKey),
+    heading: t(e.headingKey),
+    body: t(e.bodyKey, { name: e.name }),
+    cta: t(e.ctaKey),
+    url: e.url,
+    footerLines: [t("auth.email.expiry", { minutes: e.expiryMinutes }), t("auth.email.ignore")],
   });
 };
 

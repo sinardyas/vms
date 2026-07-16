@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import { users } from "./auth";
+import { notifications } from "./notifications";
 import { roles, rolePermissions, userRoles } from "./rbac";
 import {
   approvalRoutes,
@@ -20,6 +21,12 @@ import { approvalRequestSteps, approvalRequests } from "./approvals";
 export const usersRelations = relations(users, ({ many }) => ({
   memberships: many(vendorSubUsers),
   roles: many(userRoles),
+  notifications: many(notifications),
+}));
+
+// The in-app notification store (M6.1) — every row is addressed to exactly one recipient.
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, { fields: [notifications.userId], references: [users.id] }),
 }));
 
 export const rolesRelations = relations(roles, ({ one, many }) => ({

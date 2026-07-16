@@ -99,3 +99,13 @@ export const localityEnum = pgEnum("locality", ["local", "foreign"]);
 
 /** Notification delivery channel (ADR-0012). */
 export const notificationChannelEnum = pgEnum("notification_channel", ["email", "in_app"]);
+
+/**
+ * Interface / correspondence language (ADR-0008), mirroring `@vms/domain`'s `LOCALES`.
+ *
+ * Stored per user (M6.1) because a notification renders in its **recipient's** locale, which is not
+ * the acting request's: a document-rejection email is addressed to the vendor, but the request that
+ * triggers it belongs to the verifier. `RequestContext.locale` answers "what language is this
+ * response in"; this column answers "what language does this person read".
+ */
+export const localeEnum = pgEnum("locale", ["id", "en"]);

@@ -26,6 +26,9 @@ export * from "./approval";
 // Master-data framework — bilingual labels + referential-integrity contract (M2.1)
 export * from "./master";
 
+// Notification catalogue, channel policy + localized templates — the M6.1 service's pure core
+export * from "./notifications";
+
 // Zod validation (bridge + shared primitives)
 export * from "./schemas";
 
