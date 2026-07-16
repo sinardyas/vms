@@ -80,13 +80,24 @@ const soundBank = {
   holderSameAsCompany: true,
 } as const;
 
-const fakeStore = (overrides: Partial<VendorStore> = {}): VendorStore & { calls: string[] } => {
+const fakeStore = (
+  overrides: Partial<VendorStore> = {},
+): VendorStore & { calls: string[]; submitTargets: string[] } => {
   const calls: string[] = [];
+  const submitTargets: string[] = [];
   return {
     calls,
-    create: async (_ctx, ownerUserId, input) => {
-      calls.push(`create:${ownerUserId}`);
-      return { ...readyLocal, id: VENDOR, origin: input.origin, name: input.name, status: "draft" };
+    submitTargets,
+    create: async (_ctx, input, opts) => {
+      calls.push(`create:${opts.source}:${opts.ownerUserId ?? "-"}`);
+      return {
+        ...readyLocal,
+        id: VENDOR,
+        origin: input.origin,
+        name: input.name,
+        status: "draft",
+        source: opts.source,
+      };
     },
     getById: async (id) => (id === VENDOR ? readyLocal : null),
     update: async (_ctx, id, input) => {
@@ -100,8 +111,9 @@ const fakeStore = (overrides: Partial<VendorStore> = {}): VendorStore & { calls:
     }),
     requiredDocuments: async () => [],
     taxIdTaken: async () => false,
-    submit: async (_ctx, id) => {
+    submit: async (_ctx, id, targetStatus) => {
       calls.push(`submit:${id}`);
+      submitTargets.push(targetStatus);
       return "submitted";
     },
     ...overrides,
@@ -193,7 +205,7 @@ describe("POST /vendors — create Draft", () => {
       json("POST", { origin: "local", source: "self", name: "PT Baru" }),
     );
     expect(res.status).toBe(201);
-    expect(store.calls).toContain("create:user-1");
+    expect(store.calls).toContain("create:self:user-1");
   });
 
   test("409 alreadyRegistered when the caller already owns one", async () => {
@@ -203,6 +215,28 @@ describe("POST /vendors — create Draft", () => {
     );
     expect(res.status).toBe(409);
     expect((await res.json()).error.messageKey).toBe("error.vendor.alreadyRegistered");
+  });
+
+  test("internal actor creates an office Draft (source=office, no owner link)", async () => {
+    const store = fakeStore();
+    const res = await mount(() => actor("internal", ["add"]), store).request(
+      "/vendors",
+      // client-sent source is ignored — the server sets it from the actor kind.
+      json("POST", { origin: "foreign", source: "self", name: "Hyundai Marine Co." }),
+    );
+    expect(res.status).toBe(201);
+    expect((await res.json()).item.source).toBe("office");
+    expect(store.calls).toContain("create:office:-");
+  });
+
+  test("office registration has no one-per-owner cap (staff register many)", async () => {
+    // `ownedVendorId` returns a vendor, but the office branch never consults it — no 409.
+    const store = fakeStore();
+    const res = await mount(() => actor("internal", ["add"]), store).request(
+      "/vendors",
+      json("POST", { origin: "local", source: "office", name: "PT Kedua" }),
+    );
+    expect(res.status).toBe(201);
   });
 });
 
@@ -229,7 +263,7 @@ describe("PUT /vendors/:id — lenient Draft save", () => {
 });
 
 describe("POST /vendors/:id/submit — the gate", () => {
-  test("200 Draft→Pending when complete", async () => {
+  test("200 self Draft→Pending when complete", async () => {
     const store = fakeStore();
     const res = await mount(() => actor("vendor", ["edit"]), store).request(
       `/vendors/${VENDOR}/submit`,
@@ -237,6 +271,17 @@ describe("POST /vendors/:id/submit — the gate", () => {
     );
     expect(res.status).toBe(200);
     expect(store.calls).toContain(`submit:${VENDOR}`);
+    expect(store.submitTargets).toEqual(["pending"]);
+  });
+
+  test("200 office Draft→Pending-HOD (routes to the HOD queue by source)", async () => {
+    const store = fakeStore({ getById: async () => ({ ...readyLocal, source: "office" }) });
+    const res = await mount(() => actor("internal", ["edit"]), store).request(
+      `/vendors/${VENDOR}/submit`,
+      json("POST", {}),
+    );
+    expect(res.status).toBe(200);
+    expect(store.submitTargets).toEqual(["pending_hod"]);
   });
 
   test("422 with blockers when a required field is missing", async () => {
