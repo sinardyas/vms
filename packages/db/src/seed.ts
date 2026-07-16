@@ -13,6 +13,7 @@
  */
 import { db } from "./index";
 import { seedAccess } from "./seed/access";
+import { seedApprovalRoutes } from "./seed/approval-routes";
 import { seedDocumentMaster } from "./seed/document-master";
 import { seedRegistrationLists } from "./seed/registration-lists";
 
@@ -21,6 +22,13 @@ async function main() {
   // biome-ignore lint/suspicious/noConsole: seed progress belongs in stdout for container logs.
   console.log(
     `[seed] access control: ${access.roles} roles, ${access.permissions} permission rows (idempotent).`,
+  );
+
+  // Approval routes follow access — their steps resolve role codes seeded by seedAccess.
+  const routes = await seedApprovalRoutes(db);
+  // biome-ignore lint/suspicious/noConsole: seed progress belongs in stdout for container logs.
+  console.log(
+    `[seed] approval routes: ${routes.routes} routes, ${routes.steps} steps (idempotent).`,
   );
 
   const lists = await seedRegistrationLists(db);
