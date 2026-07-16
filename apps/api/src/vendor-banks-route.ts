@@ -143,7 +143,7 @@ const toDTO = (row: typeof vendorBanks.$inferSelect, currencyIds: string[]): Ven
 });
 
 /** Columns written from the capture input (everything except the primary flag + currencies). */
-const bankValues = (vendorId: string, input: VendorBankInput) => ({
+export const bankValues = (vendorId: string, input: VendorBankInput) => ({
   vendorId,
   bankId: input.bankId ?? null,
   bankName: input.bankName,
