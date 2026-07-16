@@ -68,10 +68,12 @@ import {
 } from "@vms/domain";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { type Context, Hono } from "hono";
-import { isOnePendingChange, openApprovalRequest } from "./approval-engine";
+import { type StepAssignment, isOnePendingChange, openApprovalRequest } from "./approval-engine";
 import { writeAudit } from "./audit";
 import type { AppEnv } from "./context";
+import { env } from "./env";
 import { sendError } from "./http-error";
+import { notificationReader, notifyStepAssigned } from "./notification-events";
 import { requirePermission } from "./rbac";
 import {
   type VendorMembershipStore,
@@ -121,7 +123,14 @@ export type VendorDTO = {
  * The outcome of the Draft→Pending write: applied, blocked by the tax-id partial-unique, or blocked by
  * the one-pending-change lock (the vendor already carries an open request — ADR-0010).
  */
-export type SubmitOutcome = "submitted" | "tax_conflict" | "change_pending";
+/**
+ * The result of a submit. Success carries the step-1 {@link StepAssignment} the approval open
+ * produced, so the route can tell that approver a decision is waiting (M6.2) — the store can't do it
+ * itself, because it *is* the transaction, and a notification must never be sent from inside one.
+ */
+export type SubmitOutcome =
+  | { readonly ok: true; readonly assignment: StepAssignment }
+  | { readonly ok: false; readonly reason: "tax_conflict" | "change_pending" };
 
 /**
  * The outcome of a submitter recall (Pending→Draft, ADR-0010): withdrawn, or refused because the vendor
@@ -515,7 +524,7 @@ export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
           .set({ status: targetStatus, updatedAt: new Date() })
           .where(eq(vendors.id, vendorId));
       } catch (error) {
-        if (isTaxIdConflict(error)) return "tax_conflict";
+        if (isTaxIdConflict(error)) return { ok: false, reason: "tax_conflict" };
         throw error;
       }
       await writeAudit(tx, ctx, {
@@ -531,18 +540,18 @@ export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
       const trigger =
         targetStatus === "pending_hod" ? "office_vendor_registration" : "new_vendor_registration";
       try {
-        await openApprovalRequest(tx, ctx, {
+        const { assignment } = await openApprovalRequest(tx, ctx, {
           vendorId,
           trigger,
           submitterUserId: ctx.actor?.userId ?? null,
         });
+        return { ok: true, assignment };
       } catch (error) {
         // The one-pending-change lock (ADR-0010): the vendor already carries an open request. Surface a
         // friendly 409 and roll back the transition rather than 500 on the raw partial-index violation.
-        if (isOnePendingChange(error)) return "change_pending";
+        if (isOnePendingChange(error)) return { ok: false, reason: "change_pending" };
         throw error;
       }
-      return "submitted";
     }),
 
   recall: (ctx, vendorId) =>
@@ -756,12 +765,28 @@ export const vendorRoutes = (
     // (`pending_hod`), self-registrations to the standard AP queue (`pending`). Same gate, one transition.
     const targetStatus = vendor.source === "office" ? "pending_hod" : "pending";
     const outcome = await store.submit(c.var.ctx, vendor.id, targetStatus);
-    if (outcome === "tax_conflict") {
-      return sendError(c, conflictError({ messageKey: "error.vendor.taxIdDuplicate" }));
+    if (!outcome.ok) {
+      return sendError(
+        c,
+        conflictError({
+          messageKey:
+            outcome.reason === "tax_conflict"
+              ? "error.vendor.taxIdDuplicate"
+              : "error.approval.changePending",
+        }),
+      );
     }
-    if (outcome === "change_pending") {
-      return sendError(c, conflictError({ messageKey: "error.approval.changePending" }));
-    }
+    // The submission is committed — now tell the approver it landed on (M6.2, ADR-0012). After the
+    // transaction, deliberately: the vendor is Pending whether or not this email goes out.
+    await notifyStepAssigned(notificationReader(), {
+      assigneeUserId: outcome.assignment.assigneeUserId,
+      vendorName: vendor.name,
+      roleLabel: {
+        nameId: outcome.assignment.roleNameId,
+        nameEn: outcome.assignment.roleNameEn,
+      },
+      url: `${env.consoleUrl}/approvals`,
+    });
     const item = await store.getById(vendor.id);
     return item ? c.json({ item }) : sendError(c, invariantError());
   });

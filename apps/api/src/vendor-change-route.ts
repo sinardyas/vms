@@ -43,10 +43,12 @@ import {
 } from "@vms/domain";
 import { and, eq } from "drizzle-orm";
 import { type Context, Hono } from "hono";
-import { isOnePendingChange, openApprovalRequest } from "./approval-engine";
+import { type StepAssignment, isOnePendingChange, openApprovalRequest } from "./approval-engine";
 import { writeAudit } from "./audit";
 import type { AppEnv } from "./context";
+import { env } from "./env";
 import { sendError } from "./http-error";
+import { notificationReader, notifyStepAssigned } from "./notification-events";
 import { requirePermission } from "./rbac";
 
 /** Change requests gate on the `vendors` module (the record being edited); ownership is scoped separately. */
@@ -55,6 +57,8 @@ const MODULE = "vendors" as const;
 /** The live vendor facts a change is validated against — its lifecycle state, origin, and own country. */
 export type VendorChangeRef = {
   readonly id: string;
+  /** The vendor's display name — what the approver's `step_assigned` notification is *about* (M6.2). */
+  readonly name: string;
   readonly status: VendorStatus;
   readonly origin: Origin;
   readonly countryId: string | null;
@@ -73,7 +77,12 @@ export type ChangeRequestDTO = {
 
 /** Raising a change: opened (with its request id), or blocked by the one-pending-change lock (ADR-0010). */
 export type CreateChangeOutcome =
-  | { readonly ok: true; readonly requestId: string }
+  | {
+      readonly ok: true;
+      readonly requestId: string;
+      /** Step 1's auto-assignment, for the route to notify the approver once this has committed (M6.2). */
+      readonly assignment: StepAssignment;
+    }
   | { readonly ok: false; readonly reason: "change_pending" };
 
 /** Cancelling a change: withdrawn, none open to withdraw, or review has already started (post-decision). */
@@ -105,6 +114,7 @@ export const drizzleVendorChangeStore = (dbHandle: DB = defaultDb): VendorChange
     const [row] = await dbHandle
       .select({
         id: vendors.id,
+        name: vendors.name,
         status: vendors.status,
         origin: vendors.origin,
         countryId: vendors.countryId,
@@ -125,7 +135,7 @@ export const drizzleVendorChangeStore = (dbHandle: DB = defaultDb): VendorChange
         .set({ changePending: true, updatedAt: new Date() })
         .where(eq(vendors.id, vendorId));
       try {
-        const { requestId } = await openApprovalRequest(tx, ctx, {
+        const { requestId, assignment } = await openApprovalRequest(tx, ctx, {
           vendorId,
           trigger: changeTrigger(change.kind),
           submitterUserId: ctx.actor?.userId ?? null,
@@ -137,7 +147,7 @@ export const drizzleVendorChangeStore = (dbHandle: DB = defaultDb): VendorChange
           subjectType: "vendor",
           subjectId: vendorId,
         });
-        return { ok: true, requestId };
+        return { ok: true, requestId, assignment };
       } catch (error) {
         // The vendor already carries an open request (registration or another change) — ADR-0010 lock.
         if (isOnePendingChange(error)) return { ok: false, reason: "change_pending" };
@@ -299,6 +309,13 @@ export const vendorChangeRoutes = (
     if (!outcome.ok) {
       return sendError(c, conflictError({ messageKey: "error.approval.changePending" }));
     }
+    // The change is raised and committed — tell the approver it routed to (M6.2, ADR-0012).
+    await notifyStepAssigned(notificationReader(), {
+      assigneeUserId: outcome.assignment.assigneeUserId,
+      vendorName: vendor.name,
+      roleLabel: { nameId: outcome.assignment.roleNameId, nameEn: outcome.assignment.roleNameEn },
+      url: `${env.consoleUrl}/approvals`,
+    });
     const item = await store.current(vendor.id);
     return item ? c.json({ item }, 201) : sendError(c, invariantError());
   });
