@@ -60,6 +60,31 @@ export const verifyStatusEnum = pgEnum("verify_status", ["pending", "verified", 
 /** Document Master origin applicability (ADR-0013). */
 export const docAppliesToEnum = pgEnum("doc_applies_to", ["local", "foreign", "both"]);
 
+/**
+ * Vendor taxation status (drift-audit #4 P0). PKP = registered VAT collector (drives PPN
+ * eligibility + the SPPKP document requirement); crossed with taxpayer type (badan/perorangan).
+ * Nullable in Draft, required at submit for local origin (M3.4). Mirrors the portal's
+ * "Status Perpajakan" set exactly.
+ */
+export const taxStatusEnum = pgEnum("tax_status", [
+  "pkp_corporate",
+  "pkp_individual",
+  "non_pkp_corporate",
+  "non_pkp_individual",
+]);
+
+/**
+ * NPWP sub-type (drift-audit #4). Distinguishes a personal NPWP from a company head-office vs
+ * branch registration. Captured on the vendor record; nullable.
+ */
+export const npwpTypeEnum = pgEnum("npwp_type", ["personal", "head_office", "branch"]);
+
+/**
+ * Company scale per SIUP (drift-audit #4 P1) — the Indonesian SME classification. Nullable,
+ * optional at submit.
+ */
+export const companyScaleEnum = pgEnum("company_scale", ["kecil", "menengah", "besar"]);
+
 /** Vendor payment terms captured at registration (design + ADR-0013). */
 export const paymentTermEnum = pgEnum("payment_term", [
   "credit_30",
