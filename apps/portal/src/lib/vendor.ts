@@ -62,6 +62,22 @@ export type RequiredDocumentDTO = {
   nameId: string;
   nameEn: string;
   captured: boolean;
+  /** The verifier's outcome on the current version (M6.3) — `null` when nothing is captured yet. */
+  verifyStatus: "pending" | "verified" | "rejected" | null;
+  /** Why it was rejected — `null` unless `verifyStatus === "rejected"`. */
+  rejectReason: string | null;
+};
+
+/**
+ * The last decision on the vendor's registration (M6.3, ADR-0016) — what the status view shows when a
+ * registration comes back rejected. Read from the record, so it says what is true now rather than
+ * what some email said at the time.
+ */
+export type VendorDecisionDTO = {
+  outcome: string;
+  reason: string | null;
+  decidedByName: string | null;
+  decidedAt: string | null;
 };
 
 export const vendorApi = {
@@ -100,6 +116,12 @@ export const vendorApi = {
   requiredDocuments: (locale: string, id: string): Promise<RequiredDocumentDTO[]> =>
     request<{ items: RequiredDocumentDTO[] }>(`/vendors/${id}/required-documents`, locale).then(
       (r) => r.items,
+    ),
+
+  /** The last decision taken on the registration — `null` while nothing has been decided yet. */
+  latestDecision: (locale: string, id: string): Promise<VendorDecisionDTO | null> =>
+    request<{ item: VendorDecisionDTO | null }>(`/vendors/${id}/latest-decision`, locale).then(
+      (r) => r.item,
     ),
 };
 
