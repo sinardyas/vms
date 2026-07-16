@@ -12,6 +12,7 @@ import { devActorResolver } from "./dev-actor";
 import { documentMasterRoutes } from "./document-master-route";
 import { env } from "./env";
 import { meRoutes } from "./me-route";
+import { operationalListRoutes } from "./operational-lists-route";
 import { registrationListRoutes } from "./registration-lists-route";
 import { sessionActorResolver } from "./session-actor";
 
@@ -76,5 +77,11 @@ app.route("/console/document-master", documentMasterRoutes());
 // the deadlock guard (ADR-0011b) that warns, re-confirmably, before a save strands a step with no
 // eligible approver (reusing the M1.5 eligibility count + M1.6 SoD primitive).
 app.route("/console/approval-routes", approvalRouteRoutes());
+
+// M2.5 (#36): Operational lists — the six behaviorally-inert reference lists (departments, soechi
+// entities, vessels, ports, tax codes, SLA thresholds) the console manages but nothing in Phase-0 acts
+// on (ADR-0002). Each is a thin instantiation of the M2.1 framework, gated on `operational_lists` and
+// audited atomically; `sla_thresholds` is captured but deliberately not enforced (config, not behaviour).
+app.route("/console/operational-lists", operationalListRoutes());
 
 export default { port: env.port, fetch: app.fetch };
