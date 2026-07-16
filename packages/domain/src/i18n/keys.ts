@@ -68,6 +68,22 @@ export const catalogue = {
   "enum.verifyStatus.verified": { id: "Terverifikasi", en: "Verified" },
   "enum.verifyStatus.rejected": { id: "Ditolak", en: "Rejected" },
 
+  // Taxation status (drift-audit #4 P0) — the portal's "Status Perpajakan" set (M3.5).
+  "enum.taxStatus.pkp_corporate": { id: "PKP – Badan", en: "PKP – Corporate" },
+  "enum.taxStatus.pkp_individual": { id: "PKP – Perorangan", en: "PKP – Individual" },
+  "enum.taxStatus.non_pkp_corporate": { id: "Non-PKP – Badan", en: "Non-PKP – Corporate" },
+  "enum.taxStatus.non_pkp_individual": { id: "Non-PKP – Perorangan", en: "Non-PKP – Individual" },
+
+  // NPWP sub-type (drift-audit #4).
+  "enum.npwpType.personal": { id: "Perorangan", en: "Personal" },
+  "enum.npwpType.head_office": { id: "Kantor Pusat", en: "Head Office" },
+  "enum.npwpType.branch": { id: "Cabang", en: "Branch" },
+
+  // Company scale per SIUP (drift-audit #4 P1).
+  "enum.companyScale.kecil": { id: "Kecil", en: "Small" },
+  "enum.companyScale.menengah": { id: "Menengah", en: "Medium" },
+  "enum.companyScale.besar": { id: "Besar", en: "Large" },
+
   // RBAC module labels (ADR-0012) — the 9 permission subjects. Codes stay neutral; these are the
   // human labels the audit filter (M1.4) and the Access matrix editor (M1.5) render.
   "enum.rbacModule.vendors": { id: "Vendor", en: "Vendors" },
