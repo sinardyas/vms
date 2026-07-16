@@ -16,10 +16,19 @@
  * to build the domain `Actor`.
  */
 
-import { authAccounts, authSessions, authVerifications, db, users } from "@vms/db";
+import {
+  authAccounts,
+  authSessions,
+  authVerifications,
+  db,
+  roles,
+  userRoles,
+  users,
+} from "@vms/db";
 import { type Locale, resolveLocale } from "@vms/domain";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { eq } from "drizzle-orm";
 import { type AuditAttribution, type AuditEntry, writeAuditRow } from "./audit";
 import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
 import { env } from "./env";
@@ -35,6 +44,30 @@ const recordAuthEvent = async (attribution: AuditAttribution, entry: AuditEntry)
     await writeAuditRow(db, attribution, entry);
   } catch (error) {
     console.error("[audit] failed to record auth event", entry.action, error);
+  }
+};
+
+/**
+ * Grant a freshly self-registered user the **`vendor`** role (M3.5, #46, ADR-0004). Public sign-up is
+ * the vendor path (`kind` is forced to `vendor` below), but better-auth only writes the `users` row — it
+ * never assigns a role, so without this a self-registered vendor resolves an empty (deny-all) permission
+ * set and the portal 403s every capture call. Idempotent (the `user_roles` unique index) and best-effort
+ * so an assignment hiccup is logged, never allowed to break the account creation it follows.
+ */
+const assignVendorRole = async (userId: string): Promise<void> => {
+  try {
+    const [vendorRole] = await db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(eq(roles.code, "vendor"))
+      .limit(1);
+    if (!vendorRole) {
+      console.error("[auth] vendor role not seeded — new vendor has no permissions", userId);
+      return;
+    }
+    await db.insert(userRoles).values({ userId, roleId: vendorRole.id }).onConflictDoNothing();
+  } catch (error) {
+    console.error("[auth] failed to assign vendor role", userId, error);
   }
 };
 
@@ -127,6 +160,9 @@ export const auth = betterAuth({
     user: {
       create: {
         after: async (user) => {
+          // Public sign-up = a vendor account: grant the `vendor` role so the new owner can actually
+          // capture their registration (ADR-0004). Internal users are created outside this flow.
+          await assignVendorRole(user.id);
           await recordAuthEvent(
             { actorUserId: user.id },
             { action: "user.registered", subjectType: "user", subjectId: user.id },
