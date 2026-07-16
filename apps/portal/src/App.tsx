@@ -30,6 +30,7 @@ import {
   LocaleProvider,
   LocaleSwitch,
   type NavGroup,
+  NotificationBell,
   StatusPill,
   ToastProvider,
   useCapabilities,
@@ -41,6 +42,7 @@ import { AuthScreens } from "./features/auth-screens";
 import { Registration } from "./features/registration";
 import { loadCapabilities } from "./lib/api";
 import { signOut } from "./lib/auth";
+import { notificationApi } from "./lib/notifications";
 import { type VendorDTO, vendorApi } from "./lib/vendor";
 
 /** A small landing card: the vendor's current registration status + a jump into the wizard. */
@@ -85,6 +87,19 @@ function Dashboard({ onGoRegister }: { onGoRegister: () => void }) {
     </Card>
   );
 }
+
+/**
+ * Which portal section a notification's link refers to.
+ *
+ * Notification links are absolute URLs — M6.2 builds them server-side, where the portal's origin is
+ * known but its client-side section keys are not. The portal has no router (sections are state), so a
+ * link is matched by path rather than followed: every Phase-0 vendor notification concerns the
+ * registration, and `documents` is the one sub-view worth landing on directly.
+ */
+const sectionFor = (link: string): string => {
+  const path = (URL.canParse(link) ? new URL(link).pathname : link).toLowerCase();
+  return path.includes("document") ? "documents" : "registration";
+};
 
 /** The authenticated portal — nav + section switch. */
 function Portal() {
@@ -141,6 +156,12 @@ function Portal() {
       title={t(titleKey)}
       headerRight={
         <div className="flex items-center gap-2">
+          {/* The vendor's notification centre (M6.3). Its links point at portal sections, so a click
+              navigates in-app rather than reloading. */}
+          <NotificationBell
+            api={notificationApi}
+            onNavigate={(link) => setActive(sectionFor(link))}
+          />
           <LocaleSwitch />
           <Button variant="ghost" size="sm" onClick={doSignOut}>
             {t("portal.auth.signOut")}

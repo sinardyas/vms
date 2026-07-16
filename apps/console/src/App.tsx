@@ -27,6 +27,7 @@ import {
   LocaleProvider,
   LocaleSwitch,
   type NavGroup,
+  NotificationBell,
   ToastProvider,
   useCapabilities,
 } from "@vms/ui";
@@ -41,6 +42,7 @@ import { OperationalLists } from "./features/operational-lists";
 import { RegistrationLists } from "./features/registration-lists";
 import { Vendors } from "./features/vendors";
 import { loadCapabilities } from "./lib/api";
+import { notificationApi } from "./lib/notifications";
 
 /**
  * Staff Console shell (M0.5). The dark navy (#001a36) sidebar skin, mirroring the prototype's
@@ -138,6 +140,23 @@ function Placeholder({ title }: { title: string }) {
  * actor may reach. Runs inside {@link CapabilitiesProvider}, so `useCapabilities().can` reflects the
  * server's `/me` grid; until it loads (or with no session) gated items stay hidden — deny-by-default.
  */
+/**
+ * Which console section a notification's link refers to.
+ *
+ * Notification links are absolute URLs built server-side (M6.2), where the console's origin is known
+ * but its client-side section keys are not; the console has no router, so a link is matched by path
+ * rather than followed. `step_assigned` — the only event that reaches staff today — points at an
+ * approval. A section the actor can't view is filtered out of the nav and falls back to the
+ * Dashboard below, so this never lands someone on a screen their grid denies.
+ */
+const sectionFor = (link: string): string => {
+  const path = (URL.canParse(link) ? new URL(link).pathname : link).toLowerCase();
+  if (path.includes("approval")) return "approvals";
+  if (path.includes("verification")) return "verification";
+  if (path.includes("vendor")) return "vendors";
+  return "dashboard";
+};
+
 function Console() {
   const [active, setActive] = useState("dashboard");
   const { can } = useCapabilities();
@@ -166,7 +185,16 @@ function Console() {
       onNavigate={setActive}
       user={{ name: "Sari Wijaya", role: "Vendor Administrator" }}
       title={TITLES[current] ?? APP_NAME}
-      headerRight={<LocaleSwitch />}
+      headerRight={
+        <div className="flex items-center gap-2">
+          {/* Staff notification centre (M6.3) — `step_assigned` lands here the moment a step opens. */}
+          <NotificationBell
+            api={notificationApi}
+            onNavigate={(link) => setActive(sectionFor(link))}
+          />
+          <LocaleSwitch />
+        </div>
+      }
     >
       {showGallery ? (
         <Gallery />

@@ -67,6 +67,27 @@ export {
 } from "./components/select";
 export { ToastProvider, useToast } from "./components/toast";
 export { ComingSoon, type ComingSoonProps } from "./components/coming-soon";
+export {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuGroup,
+  DropdownMenuPortal,
+} from "./components/dropdown-menu";
+
+// Notifications — the in-app centre (M6.3, ADR-0016), mounted in the shell's `headerRight` by both
+// apps. The app supplies the API; this package never learns where it lives.
+export {
+  NotificationBell,
+  relativeTime,
+  type NotificationBellProps,
+  type NotificationApi,
+  type NotificationItem,
+  type NotificationFeedPage,
+} from "./notifications/bell";
 
 // App shell
 export {
