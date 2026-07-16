@@ -33,6 +33,7 @@ import {
 import { useState } from "react";
 import { AccessAdmin } from "./features/access-admin";
 import { ApprovalRoutes } from "./features/approval-routes";
+import { Approvals } from "./features/approvals";
 import { AuditLog } from "./features/audit-log";
 import { DocumentMaster } from "./features/document-master";
 import { OperationalLists } from "./features/operational-lists";
@@ -170,6 +171,8 @@ function Console() {
         <Gallery />
       ) : current === "vendors" ? (
         <Vendors />
+      ) : current === "approvals" ? (
+        <Approvals />
       ) : current === "audit" ? (
         <AuditLog />
       ) : current === "access" ? (
