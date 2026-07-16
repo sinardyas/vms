@@ -64,7 +64,7 @@ const fakeStore = (
   const calls: string[] = [];
   return {
     calls,
-    vendorExists: overrides.vendorExists ?? (async () => true),
+    getVendorStatus: overrides.getVendorStatus ?? (async () => "draft"),
     documentMasterExists: overrides.documentMasterExists ?? (async () => true),
     list: overrides.list ?? (async () => [aSlot]),
     addVersion:
@@ -155,7 +155,7 @@ describe("upload a version — validation + wiring", () => {
     expect(storage.stored[0]?.objectKey).toStartWith("document-versions/");
   });
   test("upload on an unknown vendor → 404", async () => {
-    const store = fakeStore({ vendorExists: async () => false });
+    const store = fakeStore({ getVendorStatus: async () => null });
     const res = await mount(() => actorWith(["add"]), store).request(
       `/vendors/${VENDOR}/documents/versions`,
       upload(pdf(), { documentMasterId: DOC }),
@@ -212,7 +212,7 @@ describe("list + presign + delete", () => {
     expect((await res.json()).items).toHaveLength(1);
   });
   test("list on an unknown vendor → 404", async () => {
-    const store = fakeStore({ vendorExists: async () => false });
+    const store = fakeStore({ getVendorStatus: async () => null });
     const res = await mount(() => actorWith(["view"]), store).request(
       `/vendors/${VENDOR}/documents`,
     );
@@ -248,5 +248,29 @@ describe("list + presign + delete", () => {
       { method: "DELETE" },
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe("freeze — document capture is Draft-only (M4.4, ADR-0014)", () => {
+  test("upload a version on a Pending vendor → 409 notDraft, nothing stored", async () => {
+    const store = fakeStore({ getVendorStatus: async () => "pending" });
+    const storage = fakeStorage();
+    const res = await mount(() => actorWith(["add"]), store, storage).request(
+      `/vendors/${VENDOR}/documents/versions`,
+      upload(pdf(), { documentMasterId: DOC }),
+    );
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.messageKey).toBe("error.vendor.notDraft");
+    expect(store.calls).toHaveLength(0);
+    expect(storage.stored).toHaveLength(0);
+  });
+  test("DELETE a slot on an Active vendor → 409 notDraft", async () => {
+    const store = fakeStore({ getVendorStatus: async () => "active" });
+    const res = await mount(() => actorWith(["delete"]), store).request(
+      `/vendors/${VENDOR}/documents/slots/${SLOT}`,
+      { method: "DELETE" },
+    );
+    expect(res.status).toBe(409);
+    expect(store.calls).toHaveLength(0);
   });
 });

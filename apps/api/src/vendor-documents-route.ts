@@ -33,7 +33,10 @@ import {
 import {
   type RequestContext,
   type VendorDocumentVersionInput,
+  type VendorStatus,
+  conflictError,
   invariantError,
+  isCaptureEditable,
   notFoundError,
   parseWith,
   validationError,
@@ -88,8 +91,12 @@ export type DocumentSlotDTO = {
  * (upload / presign) it drives before handing the resulting file id to {@link VendorDocumentStore.addVersion}.
  */
 export type VendorDocumentStore = {
-  /** Does the owning vendor exist? (existence only — capture doesn't need any vendor field). */
-  readonly vendorExists: (vendorId: string) => Promise<boolean>;
+  /**
+   * The owning vendor's lifecycle status, or `null` if it doesn't exist. Reads need only existence; the
+   * capture mutations also gate on it — document capture is frozen once the vendor leaves Draft (M4.4,
+   * ADR-0014).
+   */
+  readonly getVendorStatus: (vendorId: string) => Promise<VendorStatus | null>;
   /** Is `documentMasterId` a real Document Master row? (clean 422 instead of an FK 500 on a bad id). */
   readonly documentMasterExists: (documentMasterId: string) => Promise<boolean>;
   readonly list: (vendorId: string) => Promise<DocumentSlotDTO[]>;
@@ -169,13 +176,13 @@ export const drizzleVendorDocumentStore = (dbHandle: DB = defaultDb): VendorDocu
   };
 
   return {
-    vendorExists: async (vendorId) => {
+    getVendorStatus: async (vendorId) => {
       const [row] = await dbHandle
-        .select({ id: vendors.id })
+        .select({ status: vendors.status })
         .from(vendors)
         .where(eq(vendors.id, vendorId))
         .limit(1);
-      return !!row;
+      return row?.status ?? null;
     },
 
     documentMasterExists: async (documentMasterId) => {
@@ -324,7 +331,12 @@ export const vendorDocumentsRoutes = (
   // `refNo`/`variant`). Stores the bytes, then appends a version to the (vendor × doc type) slot.
   app.post("/:vendorId/documents/versions", requirePermission(MODULE, "add"), async (c) => {
     const vendorId = c.req.param("vendorId");
-    if (!(await store.vendorExists(vendorId))) return sendError(c, notFoundError());
+    const status = await store.getVendorStatus(vendorId);
+    if (status === null) return sendError(c, notFoundError());
+    // Capture is frozen once the vendor leaves Draft (M4.4, ADR-0014) — change via recall/reject.
+    if (!isCaptureEditable(status)) {
+      return sendError(c, conflictError({ messageKey: "error.vendor.notDraft" }));
+    }
 
     let body: Record<string, unknown>;
     try {
@@ -378,20 +390,23 @@ export const vendorDocumentsRoutes = (
   // List a vendor's captured document slots (each with its current version + history).
   app.get("/:vendorId/documents", requirePermission(MODULE, "view"), async (c) => {
     const vendorId = c.req.param("vendorId");
-    if (!(await store.vendorExists(vendorId))) return sendError(c, notFoundError());
+    if ((await store.getVendorStatus(vendorId)) === null) return sendError(c, notFoundError());
     return c.json({ items: await store.list(vendorId) });
   });
 
-  // Remove a slot + its versions (draft-time correction of a wrongly-added document).
+  // Remove a slot + its versions (draft-time correction of a wrongly-added document). Frozen once the
+  // vendor leaves Draft (M4.4, ADR-0014) — the submitted document set is immutable under review.
   app.delete(
     "/:vendorId/documents/slots/:slotId",
     requirePermission(MODULE, "delete"),
     async (c) => {
-      const slot = await store.removeSlot(
-        c.var.ctx,
-        c.req.param("vendorId"),
-        c.req.param("slotId"),
-      );
+      const vendorId = c.req.param("vendorId");
+      const status = await store.getVendorStatus(vendorId);
+      if (status === null) return sendError(c, notFoundError());
+      if (!isCaptureEditable(status)) {
+        return sendError(c, conflictError({ messageKey: "error.vendor.notDraft" }));
+      }
+      const slot = await store.removeSlot(c.var.ctx, vendorId, c.req.param("slotId"));
       return slot === null ? sendError(c, notFoundError()) : c.json({ item: slot });
     },
   );

@@ -65,7 +65,7 @@ const aDTO: VendorBankDTO = {
 
 const fakeStore = (
   overrides: Partial<VendorBankStore> = {},
-  vendor: VendorRef | null = { id: VENDOR, countryId: ID_COUNTRY },
+  vendor: VendorRef | null = { id: VENDOR, countryId: ID_COUNTRY, status: "draft" },
 ): VendorBankStore & { calls: string[] } => {
   const calls: string[] = [];
   return {
@@ -155,6 +155,50 @@ describe("vendor existence", () => {
     const store = fakeStore({}, null);
     const res = await mount(() => actorWith(["view"]), store).request(`/vendors/${VENDOR}/banks`);
     expect(res.status).toBe(404);
+  });
+});
+
+describe("freeze — bank capture is Draft-only (M4.4, ADR-0014)", () => {
+  const pending = { id: VENDOR, countryId: ID_COUNTRY, status: "pending" } as const;
+  test("create on a Pending vendor → 409 notDraft, store.create untouched", async () => {
+    const store = fakeStore({}, pending);
+    const res = await mount(() => actorWith(["add"]), store).request(
+      `/vendors/${VENDOR}/banks`,
+      json("POST", goodBank),
+    );
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.messageKey).toBe("error.vendor.notDraft");
+    expect(store.calls).toHaveLength(0);
+  });
+  test("update on a Pending vendor → 409 notDraft", async () => {
+    const store = fakeStore({}, pending);
+    const res = await mount(() => actorWith(["edit"]), store).request(
+      `/vendors/${VENDOR}/banks/${BANK}`,
+      json("PUT", goodBank),
+    );
+    expect(res.status).toBe(409);
+    expect(store.calls).toHaveLength(0);
+  });
+  test("delete on a Pending vendor → 409 notDraft", async () => {
+    const store = fakeStore({}, pending);
+    const res = await mount(() => actorWith(["delete"]), store).request(
+      `/vendors/${VENDOR}/banks/${BANK}`,
+      { method: "DELETE" },
+    );
+    expect(res.status).toBe(409);
+    expect(store.calls).toHaveLength(0);
+  });
+  test("attachment upload on a Pending vendor → 409 notDraft", async () => {
+    const form = new FormData();
+    form.set(
+      "file",
+      new File([new Uint8Array([1, 2, 3])], "proof.pdf", { type: "application/pdf" }),
+    );
+    const res = await mount(() => actorWith(["edit"]), fakeStore({}, pending)).request(
+      `/vendors/${VENDOR}/banks/attachments`,
+      { method: "POST", body: form },
+    );
+    expect(res.status).toBe(409);
   });
 });
 

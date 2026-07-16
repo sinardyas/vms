@@ -31,6 +31,8 @@
 
 import {
   type DB,
+  approvalRequestSteps,
+  approvalRequests,
   categoryDocumentRequirements,
   db as defaultDb,
   documentMaster,
@@ -55,6 +57,7 @@ import {
   checkVendorSubmittable,
   conflictError,
   invariantError,
+  isRecallable,
   notFoundError,
   parseWith,
   requiredDocumentSet,
@@ -64,7 +67,7 @@ import {
 } from "@vms/domain";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { type Context, Hono } from "hono";
-import { openRegistrationRequest } from "./approval-engine";
+import { isOnePendingChange, openRegistrationRequest } from "./approval-engine";
 import { writeAudit } from "./audit";
 import type { AppEnv } from "./context";
 import { sendError } from "./http-error";
@@ -113,8 +116,17 @@ export type VendorDTO = {
   readonly changePending: boolean;
 };
 
-/** The outcome of the Draft→Pending write: applied, or blocked by the tax-id partial-unique. */
-export type SubmitOutcome = "submitted" | "tax_conflict";
+/**
+ * The outcome of the Draft→Pending write: applied, blocked by the tax-id partial-unique, or blocked by
+ * the one-pending-change lock (the vendor already carries an open request — ADR-0010).
+ */
+export type SubmitOutcome = "submitted" | "tax_conflict" | "change_pending";
+
+/**
+ * The outcome of a submitter recall (Pending→Draft, ADR-0010): withdrawn, or refused because the vendor
+ * isn't under review (`not_pending`) or review has already started (`already_decided`).
+ */
+export type RecallOutcome = "recalled" | "not_pending" | "already_decided";
 
 /**
  * A vendor as the console **list** renders it (M3.7): just enough to search, badge, and open a row —
@@ -183,13 +195,19 @@ export type VendorStore = {
   readonly taxIdTaken: (taxId: string, exceptVendorId: string) => Promise<boolean>;
   /**
    * Apply Draft→`targetStatus` (`pending` for self, `pending_hod` for office) + audit atomically;
-   * reports the tax-id conflict rather than throwing a 500.
+   * reports the tax-id conflict and the one-pending-change lock rather than throwing a 500.
    */
   readonly submit: (
     ctx: RequestContext,
     vendorId: string,
     targetStatus: "pending" | "pending_hod",
   ) => Promise<SubmitOutcome>;
+  /**
+   * Submitter recall (ADR-0010): withdraw a Pending request back to Draft, but only *before any step is
+   * decided*. Resolves the open request `recalled`, returns the vendor to `draft`, and audits both — all
+   * atomically. Refuses (`not_pending` / `already_decided`) rather than mutating when the window is shut.
+   */
+  readonly recall: (ctx: RequestContext, vendorId: string) => Promise<RecallOutcome>;
 };
 
 /* ── The real Drizzle store ─────────────────────────────────────────────────────────────────────── */
@@ -507,12 +525,80 @@ export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
       // → the HOD route (`pending_hod`), self → the standard AP route (`pending`).
       const trigger =
         targetStatus === "pending_hod" ? "office_vendor_registration" : "new_vendor_registration";
-      await openRegistrationRequest(tx, ctx, {
-        vendorId,
-        trigger,
-        submitterUserId: ctx.actor?.userId ?? null,
-      });
+      try {
+        await openRegistrationRequest(tx, ctx, {
+          vendorId,
+          trigger,
+          submitterUserId: ctx.actor?.userId ?? null,
+        });
+      } catch (error) {
+        // The one-pending-change lock (ADR-0010): the vendor already carries an open request. Surface a
+        // friendly 409 and roll back the transition rather than 500 on the raw partial-index violation.
+        if (isOnePendingChange(error)) return "change_pending";
+        throw error;
+      }
       return "submitted";
+    }),
+
+  recall: (ctx, vendorId) =>
+    dbHandle.transaction(async (tx): Promise<RecallOutcome> => {
+      // Only a vendor still under review can be recalled (Draft/Active have nothing to withdraw).
+      const [vendor] = await tx
+        .select({ status: vendors.status })
+        .from(vendors)
+        .where(eq(vendors.id, vendorId))
+        .limit(1);
+      if (!vendor || (vendor.status !== "pending" && vendor.status !== "pending_hod")) {
+        return "not_pending";
+      }
+
+      // The vendor's open request + its steps' decisions — the pre-decision window (ADR-0010).
+      const [request] = await tx
+        .select({ id: approvalRequests.id, status: approvalRequests.status })
+        .from(approvalRequests)
+        .where(
+          and(
+            eq(approvalRequests.subjectVendorId, vendorId),
+            eq(approvalRequests.status, "pending"),
+          ),
+        )
+        .limit(1);
+      if (!request) return "not_pending";
+      const stepRows = await tx
+        .select({ decision: approvalRequestSteps.decision })
+        .from(approvalRequestSteps)
+        .where(eq(approvalRequestSteps.requestId, request.id));
+      if (
+        !isRecallable(
+          request.status,
+          stepRows.map((s) => s.decision),
+        )
+      ) {
+        return "already_decided";
+      }
+
+      const now = new Date();
+      await tx
+        .update(approvalRequests)
+        .set({ status: "recalled", resolvedAt: now, updatedAt: now })
+        .where(eq(approvalRequests.id, request.id));
+      await tx
+        .update(vendors)
+        .set({ status: "draft", updatedAt: now })
+        .where(eq(vendors.id, vendorId));
+      await writeAudit(tx, ctx, {
+        action: "approval_request.recalled",
+        module: "approvals",
+        subjectType: "approval_request",
+        subjectId: request.id,
+      });
+      await writeAudit(tx, ctx, {
+        action: "vendor.recalled",
+        module: MODULE,
+        subjectType: "vendor",
+        subjectId: vendorId,
+      });
+      return "recalled";
     }),
 });
 
@@ -667,6 +753,26 @@ export const vendorRoutes = (
     const outcome = await store.submit(c.var.ctx, vendor.id, targetStatus);
     if (outcome === "tax_conflict") {
       return sendError(c, conflictError({ messageKey: "error.vendor.taxIdDuplicate" }));
+    }
+    if (outcome === "change_pending") {
+      return sendError(c, conflictError({ messageKey: "error.approval.changePending" }));
+    }
+    const item = await store.getById(vendor.id);
+    return item ? c.json({ item }) : sendError(c, invariantError());
+  });
+
+  // Recall (ADR-0010): the submitter withdraws a Pending registration back to Draft to edit + resubmit —
+  // allowed only before any step is decided. Ownership-scoped (the submitter acts on their own vendor);
+  // after the first decision, review "locks in" and change goes through an approver's rejection instead.
+  app.post("/vendors/:vendorId/recall", requirePermission(MODULE, "edit"), ownership, async (c) => {
+    const vendor = await store.getById(c.req.param("vendorId"));
+    if (!vendor) return sendError(c, notFoundError());
+    const outcome = await store.recall(c.var.ctx, vendor.id);
+    if (outcome === "not_pending") {
+      return sendError(c, conflictError({ messageKey: "error.approval.notRecallable" }));
+    }
+    if (outcome === "already_decided") {
+      return sendError(c, conflictError({ messageKey: "error.approval.recallAfterDecision" }));
     }
     const item = await store.getById(vendor.id);
     return item ? c.json({ item }) : sendError(c, invariantError());
