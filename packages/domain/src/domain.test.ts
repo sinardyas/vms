@@ -12,6 +12,7 @@ import {
   capabilities,
   eligibleApprovers,
   hasEligibleApprover,
+  hasOverrideAuthority,
   isEligibleApprover,
   permissionKey,
   toPermissionSet,
@@ -176,5 +177,18 @@ describe("Approver eligibility (M1.6, SoD)", () => {
     const only = [approver("submitter")];
     expect(eligibleApprovers(only, { submitterUserId: "submitter" })).toHaveLength(0);
     expect(hasEligibleApprover(only, { submitterUserId: "submitter" })).toBe(false);
+  });
+
+  test("admin override authority = approvals:edit, distinct from approve (M4.3, ADR-0014)", () => {
+    // a plain approver (only approvals:approve) is NOT an override authority
+    expect(hasOverrideAuthority(approver("a1"))).toBe(false);
+    const admin: ApproverCandidate = {
+      userId: "admin",
+      permissions: toPermissionSet([
+        { module: "approvals", verb: "approve" },
+        { module: "approvals", verb: "edit" },
+      ]),
+    };
+    expect(hasOverrideAuthority(admin)).toBe(true);
   });
 });
