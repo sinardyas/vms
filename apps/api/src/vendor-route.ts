@@ -37,6 +37,8 @@ import {
   db as defaultDb,
   documentMaster,
   documentSlots,
+  documentVersions,
+  users,
   vendorBankCurrencies,
   vendorBanks,
   vendorSubUsers,
@@ -55,6 +57,7 @@ import {
   type VendorProfileChangeInput,
   type VendorSource,
   type VendorSubmissionCandidate,
+  type VerifyStatus,
   checkVendorSubmittable,
   conflictError,
   invariantError,
@@ -166,6 +169,32 @@ export type RequiredDocumentDTO = {
   readonly nameId: string;
   readonly nameEn: string;
   readonly captured: boolean;
+  /**
+   * The verifier's outcome on the **current** version (M5.1), or `null` when nothing is captured.
+   *
+   * `captured` alone can't tell a vendor whether they're waiting or have work to do — a rejected
+   * document is still captured. Surfaced here (M6.3, ADR-0016) so the status view can answer "what's
+   * next?" from the record rather than from whichever email happened to survive.
+   */
+  readonly verifyStatus: VerifyStatus | null;
+  /** Why the current version was rejected — `null` unless `verifyStatus === "rejected"`. */
+  readonly rejectReason: string | null;
+};
+
+/**
+ * The last decision taken on a vendor's registration, as the portal status view renders it (M6.3).
+ *
+ * "Last" = most recently decided step, which for a rejection is the step that ended the request:
+ * a rejection stops the route, so the newest decided step is the one that explains where the vendor
+ * now stands.
+ */
+export type VendorDecisionDTO = {
+  readonly outcome: string;
+  /** The decider's reason. Required on a rejection (ADR-0012), so in practice non-null for one. */
+  readonly reason: string | null;
+  /** Who decided — a name the vendor can act on, never the raw user id. */
+  readonly decidedByName: string | null;
+  readonly decidedAt: string | null;
 };
 
 /**
@@ -201,6 +230,8 @@ export type VendorStore = {
   }>;
   /** The mandatory documents this vendor must supply (origin∪category), each flagged captured-or-not. */
   readonly requiredDocuments: (vendor: VendorDTO) => Promise<RequiredDocumentDTO[]>;
+  /** The most recently decided step on this vendor's registration; `null` if none has been decided. */
+  readonly latestDecision: (vendorId: string) => Promise<VendorDecisionDTO | null>;
   /** Is `taxId` already held by a *non-Draft* vendor other than `exceptVendorId`? (the dedup pre-check). */
   readonly taxIdTaken: (taxId: string, exceptVendorId: string) => Promise<boolean>;
   /**
@@ -482,30 +513,69 @@ export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
       { master: masterRows, categoryRequirements: requirementRows },
     );
     const byId = new Map(masterRows.map((m) => [m.id, m]));
+    // Left join: the slot's *current* version carries the verifier's outcome (M5.1). Left, not inner,
+    // because a slot can exist with no current version (M3.3 draft correction) and still belongs here.
     const slotRows = await dbHandle
       .select({
         documentMasterId: documentSlots.documentMasterId,
         currentVersionId: documentSlots.currentVersionId,
+        verifyStatus: documentVersions.verifyStatus,
+        rejectReason: documentVersions.rejectReason,
       })
       .from(documentSlots)
+      .leftJoin(documentVersions, eq(documentVersions.id, documentSlots.currentVersionId))
       .where(eq(documentSlots.vendorId, vendor.id));
-    const captured = new Set(
-      slotRows.filter((s) => s.currentVersionId !== null).map((s) => s.documentMasterId),
+    const bySlot = new Map(
+      slotRows.filter((s) => s.currentVersionId !== null).map((s) => [s.documentMasterId, s]),
     );
     return requiredIds.flatMap((id) => {
       const m = byId.get(id);
-      return m
-        ? [
-            {
-              documentMasterId: id,
-              no: m.no,
-              nameId: m.nameId,
-              nameEn: m.nameEn,
-              captured: captured.has(id),
-            },
-          ]
-        : [];
+      if (!m) return [];
+      const slot = bySlot.get(id);
+      return [
+        {
+          documentMasterId: id,
+          no: m.no,
+          nameId: m.nameId,
+          nameEn: m.nameEn,
+          captured: slot !== undefined,
+          verifyStatus: slot?.verifyStatus ?? null,
+          // Only a rejection has a reason to give. Guarding on the status (rather than trusting the
+          // column to be null) keeps a stale reason from a since-re-verified version out of the DTO.
+          rejectReason: slot?.verifyStatus === "rejected" ? (slot.rejectReason ?? null) : null,
+        },
+      ];
     });
+  },
+
+  latestDecision: async (vendorId) => {
+    // Join through the request rather than reading steps directly: a step belongs to a request, and
+    // only requests whose subject is *this* vendor may be surfaced to them.
+    const [row] = await dbHandle
+      .select({
+        outcome: approvalRequestSteps.decision,
+        reason: approvalRequestSteps.reason,
+        decidedByName: users.name,
+        decidedAt: approvalRequestSteps.decidedAt,
+      })
+      .from(approvalRequestSteps)
+      .innerJoin(approvalRequests, eq(approvalRequests.id, approvalRequestSteps.requestId))
+      // Left join: a step decided by an admin override (ADR-0014) may carry no decider row.
+      .leftJoin(users, eq(users.id, approvalRequestSteps.decidedBy))
+      .where(
+        and(
+          eq(approvalRequests.subjectVendorId, vendorId),
+          ne(approvalRequestSteps.decision, "pending"),
+        ),
+      )
+      .orderBy(desc(approvalRequestSteps.decidedAt))
+      .limit(1);
+
+    return row
+      ? { ...row, decidedAt: row.decidedAt?.toISOString() ?? null }
+      : // No step has been decided yet — the registration is simply in flight, which is not a
+        // notice and must not render as one.
+        null;
   },
 
   taxIdTaken: async (taxId, exceptVendorId) => {
@@ -719,6 +789,24 @@ export const vendorRoutes = (
       const vendor = await store.getById(c.req.param("vendorId"));
       if (!vendor) return sendError(c, notFoundError());
       return c.json({ items: await store.requiredDocuments(vendor) });
+    },
+  );
+
+  // The last decision taken on this vendor's registration — what the status view shows the vendor when
+  // their registration was rejected (M6.3, ADR-0016).
+  //
+  // Read from the *record*, not from the notifications store: a notification is immutable and can go
+  // stale, while "why am I back in Draft?" must answer with what is true now. Portal-scoped like
+  // `required-documents` — the vendor role has no `approvals` grant, so the reason is surfaced here
+  // rather than from the console's approval screens.
+  app.get(
+    "/vendors/:vendorId/latest-decision",
+    requirePermission(MODULE, "view"),
+    ownership,
+    async (c) => {
+      const vendor = await store.getById(c.req.param("vendorId"));
+      if (!vendor) return sendError(c, notFoundError());
+      return c.json({ item: await store.latestDecision(vendor.id) });
     },
   );
 

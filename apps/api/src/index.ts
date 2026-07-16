@@ -14,6 +14,7 @@ import { documentMasterRoutes } from "./document-master-route";
 import { documentVerificationRoutes } from "./document-verification-route";
 import { env } from "./env";
 import { meRoutes } from "./me-route";
+import { notificationRoutes } from "./notifications-route";
 import { operationalListRoutes } from "./operational-lists-route";
 import { registrationListRoutes } from "./registration-lists-route";
 import { sessionActorResolver } from "./session-actor";
@@ -61,6 +62,11 @@ app.get("/health/db", async (c) => {
 // show/hide affordances. Computed from the same permission set the RBAC guard evaluates, so a hidden
 // button is a refused request. 401 for an anonymous caller (deny-by-default).
 app.route("/", meRoutes());
+
+// M6.3 (#79, ADR-0016): the notification centre both bells read — self-scoped to the session's own
+// rows, so like `meRoutes` it is authenticated-only rather than gated on an RBAC module, and mounted
+// at "/" because both audiences (console + portal) share it rather than it being a console surface.
+app.route("/", notificationRoutes());
 
 // Walking skeleton (#8, M0.6): guard → audit write → DB read → JSON the console renders in @vms/ui.
 app.route("/console", auditRoutes());

@@ -67,15 +67,26 @@ describe("event catalogue (ADR-0012)", () => {
   });
 });
 
-describe("channel policy (ADR-0012)", () => {
-  test("vendors are notified by email only — they live outside the console", () => {
-    expect(channelsFor("vendor")).toEqual(["email"]);
-    expect(hasInAppChannel("vendor")).toBe(false);
-  });
-
+describe("channel policy (ADR-0016, superseding ADR-0012)", () => {
   test("internal users get in-app and email", () => {
     expect(channelsFor("internal")).toEqual(["in_app", "email"]);
     expect(hasInAppChannel("internal")).toBe(true);
+  });
+
+  test("vendors get in-app and email too — email reaches them, the row is the durable record", () => {
+    // ADR-0012 sent vendors email *only*, which left the audience least likely to be looking at the
+    // app with the most perishable channel and nothing to come back to. ADR-0016 gave them the row;
+    // they did not lose the email.
+    expect(channelsFor("vendor")).toEqual(["in_app", "email"]);
+    expect(hasInAppChannel("vendor")).toBe(true);
+  });
+
+  test("every audience accumulates in-app rows, so neither bell is ever empty by policy", () => {
+    // The policy — not the caller — decides the channels, which is why flipping it was enough to
+    // give the portal a real feed without touching a single M6.2 call site.
+    for (const kind of ["vendor", "internal"] as const) {
+      expect(hasInAppChannel(kind)).toBe(true);
+    }
   });
 });
 

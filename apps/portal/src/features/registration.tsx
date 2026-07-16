@@ -39,9 +39,11 @@ import {
   Field,
   Input,
   StatusPill,
+  type StatusPillProps,
   useLocale,
   useT,
   useToast,
+  verifyStatusTone,
 } from "@vms/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PortalApiError } from "../lib/api";
@@ -52,6 +54,7 @@ import {
   type CurrencyRow,
   type RequiredDocumentDTO,
   type VendorDTO,
+  type VendorDecisionDTO,
   type VendorDraftPayload,
   banksApi,
   docsApi,
@@ -123,6 +126,98 @@ export function Registration({ documentsOnly = false }: { documentsOnly?: boolea
 function Centered({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-64 items-center justify-center text-muted-foreground">{children}</div>
+  );
+}
+
+/**
+ * What the vendor has to act on, read from the **record** (M6.3, ADR-0016).
+ *
+ * Deliberately not a notification feed — that's the bell, and it answers a different question. A
+ * notification is immutable and can go stale; this says what is true *now*: if the reason is on
+ * screen here, the registration is still waiting on it.
+ *
+ * Rendered wherever the vendor lands, not just on the status view, because a rejection sends them back
+ * to **Draft** — which is the wizard. Scoping these to the status view would hide them at exactly the
+ * moment they matter most. Renders nothing when there's nothing to act on: an empty panel saying "no
+ * notices" is noise on a screen whose job is to get the vendor to their next action.
+ */
+function RegistrationNotices({ vendor }: { vendor: VendorDTO }) {
+  const { locale } = useLocale();
+  const t = useT();
+  const [decision, setDecision] = useState<VendorDecisionDTO | null>(null);
+  const [docs, setDocs] = useState<RequiredDocumentDTO[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    vendorApi
+      .latestDecision(locale, vendor.id)
+      .then((d) => alive && setDecision(d))
+      .catch(() => alive && setDecision(null));
+    vendorApi
+      .requiredDocuments(locale, vendor.id)
+      .then((d) => alive && setDocs(d))
+      .catch(() => alive && setDocs([]));
+    return () => {
+      alive = false;
+    };
+  }, [locale, vendor.id]);
+
+  const rejectedDocs = docs.filter((d) => d.verifyStatus === "rejected");
+  // A rejection is only live while the vendor is back in Draft holding it. Once they resubmit, the
+  // record has moved on and the old reason would be describing a state that no longer exists.
+  const rejected = decision?.outcome === "rejected" && vendor.status === "draft";
+
+  if (!rejected && rejectedDocs.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {rejected && (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardHeader>
+            <CardTitle className="text-destructive">{t("portal.status.rejectedTitle")}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">{t("portal.status.rejectedBody")}</p>
+            {decision?.reason && (
+              <div className="rounded-xl border border-destructive/30 bg-card p-4">
+                <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  {t("portal.status.reasonLabel")}
+                </div>
+                <p className="mt-1 text-sm text-foreground">{decision.reason}</p>
+                {decision.decidedByName && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {t("portal.status.decidedBy", { name: decision.decidedByName })}
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {rejectedDocs.length > 0 && (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardHeader>
+            <CardTitle className="text-destructive">{t("portal.status.docRejected")}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {rejectedDocs.map((d) => (
+              <div
+                key={d.documentMasterId}
+                className="rounded-xl border border-destructive/30 bg-card p-4"
+              >
+                <div className="font-semibold text-foreground">
+                  {resolveLabel({ id: d.nameId, en: d.nameEn }, locale)}
+                </div>
+                {d.rejectReason && (
+                  <p className="mt-1 text-sm text-muted-foreground">{d.rejectReason}</p>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }
 
@@ -207,6 +302,28 @@ function StatusRow({ label, value }: { label: string; value: string }) {
  * lifecycle status plus a read-only summary of what was submitted (profile, banks, documents) so the
  * vendor can see their registration without being able to edit it (the Draft is no longer editable).
  */
+/**
+ * How one required document reads on the status view — the verifier's outcome where there is one,
+ * else whether it's been captured.
+ *
+ * Split out because the two facts rank: `captured` says the vendor did their part, `verifyStatus` says
+ * whether it was accepted. A rejected document is captured, so showing "uploaded" for it would tell the
+ * vendor there's nothing to do on the one row that needs them most.
+ */
+const docTone = (d: RequiredDocumentDTO): StatusPillProps["tone"] =>
+  // `verifyStatusTone` is the shared map, so a verified document reads the same colour here as it does
+  // in the console's verification queue — the vendor and the verifier see one status, not two.
+  d.verifyStatus ? verifyStatusTone[d.verifyStatus] : d.captured ? "success" : "pending";
+
+const docLabelKey = (d: RequiredDocumentDTO): MessageKey =>
+  d.verifyStatus === "verified"
+    ? "enum.verifyStatus.verified"
+    : d.verifyStatus === "rejected"
+      ? "enum.verifyStatus.rejected"
+      : d.captured
+        ? "portal.doc.uploaded"
+        : "portal.doc.mandatory";
+
 function StatusView({ vendor }: { vendor: VendorDTO }) {
   const { locale } = useLocale();
   const t = useT();
@@ -239,6 +356,9 @@ function StatusView({ vendor }: { vendor: VendorDTO }) {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-5">
+      {/* Anything the vendor must act on comes first — above the summary they came here to read. */}
+      <RegistrationNotices vendor={vendor} />
+
       <Card>
         <CardHeader>
           <CardTitle>{t("portal.status.title")}</CardTitle>
@@ -317,9 +437,9 @@ function StatusView({ vendor }: { vendor: VendorDTO }) {
               <span className="font-semibold text-foreground">
                 {resolveLabel({ id: d.nameId, en: d.nameEn }, locale)}
               </span>
-              <StatusPill tone={d.captured ? "success" : "pending"}>
-                {d.captured ? t("portal.doc.uploaded") : t("portal.doc.mandatory")}
-              </StatusPill>
+              {/* The verifier's outcome outranks "uploaded": a rejected document is still captured,
+                  so `captured` alone would tell a vendor their work is done when it isn't. */}
+              <StatusPill tone={docTone(d)}>{t(docLabelKey(d))}</StatusPill>
             </div>
           ))}
         </CardContent>
@@ -388,6 +508,11 @@ function Wizard({
       </aside>
 
       <div className="flex flex-col gap-4">
+        {/* A rejected registration comes back to Draft — i.e. to this wizard. Without the notice here
+            the vendor would be told to fix something with no way to see what, unless they still had
+            the email. */}
+        <RegistrationNotices vendor={vendor} />
+
         <div className="text-sm font-semibold text-muted-foreground">
           {t("portal.reg.stepOf", { n: step + 1, total })} ·{" "}
           {t(STEPS[step]?.titleKey ?? "portal.reg.title")}
