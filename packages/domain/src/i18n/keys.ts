@@ -626,6 +626,23 @@ export const catalogue = {
     en: "This step is not the current step awaiting a decision.",
   },
 
+  // --- Separation of duties + escalation (M4.3, #58, ADR-0009/0014) ---
+  // No self-approval: the submitter of a request cannot approve it at any step (ADR-0009).
+  "error.approval.selfApproval": {
+    id: "Anda mengajukan permintaan ini sehingga tidak dapat menyetujuinya.",
+    en: "You submitted this request and cannot approve it.",
+  },
+  // Verifier ≠ approver: a user who verified a document on this vendor cannot approve it (ADR-0009).
+  "error.approval.verifierConflict": {
+    id: "Anda memverifikasi dokumen vendor ini sehingga tidak dapat menyetujui permintaannya.",
+    en: "You verified a document on this vendor and cannot approve its request.",
+  },
+  // Zero eligible approver: only an admin override may resolve this step (ADR-0014).
+  "error.approval.overrideRequired": {
+    id: "Tidak ada penyetuju yang memenuhi syarat untuk langkah ini; hanya administrator yang dapat menyetujui sebagai penggantian.",
+    en: "No eligible approver for this step; only an administrator may approve as an override.",
+  },
+
   // --- Transitions + freeze/recall (M4.4, #59, ADR-0010/0014) ---
   // Recall attempted on a vendor that isn't awaiting review (already Draft/Active) — nothing to withdraw.
   "error.approval.notRecallable": {

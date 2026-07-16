@@ -16,12 +16,19 @@
  * vendor (reject → **discards** it), then clears `change_pending` — the `apply_change`/`discard_change`
  * effects, landed by {@link applyVendorChange}/{@link discardVendorChange} in this same decide tx.
  *
- * **Scope boundary (M4.2):** deciding is gated only by RBAC (`approvals:approve`) here. Separation of
- * duties (no self-approval, verifier ≠ approver) and the zero-eligible → admin-override escalation are
- * **M4.3** — the eligibility primitive ({@link approverIneligibility}, M1.6) plugs in at the decide
- * handler. The **M5.2** activation gate is now in place: a registration final-approve blocks (409, no
- * write) unless every mandatory doc is Verified ({@link computeActivationGate}, ADR-0013); the same gate
- * status rides on the request detail so the console shows "N of M verified" before an approver decides.
+ * **Separation of duties + escalation (M4.3, #58, ADR-0009/0014):** an **approve** is layered on top of
+ * the RBAC `approvals:approve` gate with the M1.6 eligibility primitive ({@link approverIneligibility}) —
+ * the submitter can't approve their own request (no self-approval, 403), nor can anyone who verified a
+ * document on the subject vendor (verifier ≠ approver, 403). If SoD + permissions leave the current step
+ * with **no eligible approver** ({@link hasEligibleApprover} = false), it must not silently stall: only a
+ * holder of {@link OVERRIDE_PERMISSION} (`approvals:edit`, the admin) may approve it, and that decision is
+ * flagged `is_override` + audited as a bypass. Reject stays RBAC-only (returning to Draft is not a
+ * duty-concentration risk).
+ *
+ * **Activation gate (M5.2, ADR-0013):** eligibility answers *who may decide*, the gate answers *whether an
+ * approval may take effect* — so SoD runs first, then a registration final-approve blocks (409, no write)
+ * unless every mandatory doc is Verified ({@link computeActivationGate}); the same gate status rides on the
+ * request detail so the console shows "N of M verified" before an approver decides.
  *
  * Stores are injectable so the whole surface is testable without Postgres; the router is mounted at
  * `/console/approvals` (internal console), RBAC-gated on the `approvals` module, every mutation audited.
@@ -34,33 +41,43 @@ import {
   db as defaultDb,
   documentSlots,
   documentVersions,
+  rolePermissions,
   roles,
   userRoles,
   users,
   vendors,
 } from "@vms/db";
 import {
+  APPROVE_PERMISSION,
   type ActivationGate,
   type ApprovalDecision,
+  type ApproverCandidate,
+  type PermissionSet,
   type RequestContext,
   type StepDecision,
   type VerifiableDocument,
   activationGate,
   activationGateError,
   applyDecision,
+  approverIneligibility,
   conflictError,
+  forbiddenError,
+  hasEligibleApprover,
+  hasOverrideAuthority,
   isEditTrigger,
   notFoundError,
   parseWith,
+  toPermissionSet,
   validationError,
 } from "@vms/domain";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { writeAudit } from "./audit";
 import type { AppEnv } from "./context";
 import { sendError } from "./http-error";
+import { expandGrants } from "./permissions";
 import { requirePermission } from "./rbac";
 import { requiredDocMasterIdsForVendor } from "./required-documents";
 import { applyVendorChange, discardVendorChange } from "./vendor-change";
@@ -146,18 +163,34 @@ export type QueueFilter = {
 export type DecideInput = {
   readonly requestId: string;
   readonly deciderUserId: string | null;
+  /**
+   * The decider's resolved RBAC grants (from `ctx.actor`, M1.1) — the eligibility/override checks read
+   * this rather than re-deriving from the DB, so they agree with the RBAC gate (and DEV_ACTOR) exactly.
+   */
+  readonly deciderPermissions: PermissionSet;
   readonly decision: ApprovalDecision;
   readonly reason: string | null;
 };
 
 /**
- * Decide outcome: applied (fresh detail), or why it couldn't be — unknown request, already resolved,
- * or (M5.2) a registration final-approve blocked because not every mandatory doc is Verified yet. The
- * `gate` rides along so the route can localize the "N of M verified" message the block carries.
+ * Decide outcome: applied (fresh detail), or why it couldn't be. Beyond unknown / already-resolved: the
+ * SoD + escalation reasons (M4.3) — the decider is the submitter (`self_approval`) or verified a document
+ * on the vendor (`verifier`), or the step is zero-eligible and the decider isn't an admin override
+ * (`override_required`), all three 403 — and (M5.2) a registration final-approve blocked because not every
+ * mandatory doc is Verified yet, a 409 whose `gate` rides along so the route can localize the "N of M
+ * verified" message.
  */
 export type DecideOutcome =
   | { readonly ok: true; readonly detail: ApprovalRequestDetailDTO }
-  | { readonly ok: false; readonly reason: "not_found" | "not_pending" }
+  | {
+      readonly ok: false;
+      readonly reason:
+        | "not_found"
+        | "not_pending"
+        | "self_approval"
+        | "verifier"
+        | "override_required";
+    }
   | { readonly ok: false; readonly reason: "gate_blocked"; readonly gate: ActivationGate };
 
 /** Reassign/delegate an open step's assignee. */
@@ -250,6 +283,61 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
       .leftJoin(stepDecider, eq(stepDecider.id, approvalRequestSteps.decidedBy))
       .where(eq(approvalRequestSteps.requestId, requestId))
       .orderBy(asc(approvalRequestSteps.stepNo));
+
+  /**
+   * The users who have verified any document on `vendorId` (M4.3 SoD: verifier ≠ approver, ADR-0009).
+   * Reads `document_versions.verified_by` through the vendor's slots; empty until M5 populates it.
+   */
+  const loadVendorVerifiers = async (handle: ReadHandle, vendorId: string): Promise<string[]> => {
+    const rows = await handle
+      .select({ verifiedBy: documentVersions.verifiedBy })
+      .from(documentVersions)
+      .innerJoin(documentSlots, eq(documentSlots.id, documentVersions.slotId))
+      .where(and(eq(documentSlots.vendorId, vendorId), isNotNull(documentVersions.verifiedBy)));
+    return Array.from(new Set(rows.flatMap((r) => (r.verifiedBy ? [r.verifiedBy] : []))));
+  };
+
+  /**
+   * The candidate approvers for a step: every active user holding its `roleId`, each with their **full**
+   * resolved permission set (union across all their active roles, like M1.1's `loadPermissions`). The
+   * engine subtracts SoD from this pool ({@link hasEligibleApprover}) to decide whether the step has an
+   * eligible approver or must escalate to an admin override (M4.3, ADR-0009/0014).
+   */
+  const loadStepCandidates = async (
+    handle: ReadHandle,
+    roleId: string,
+  ): Promise<ApproverCandidate[]> => {
+    // pool = users holding the step's (active) role; then join each pool member's every active role's
+    // grants. `pool` is a self-alias of user_roles so the pool membership and the grant expansion don't
+    // collide on the same table.
+    const pool = alias(userRoles, "pool_membership");
+    const rows = await handle
+      .select({
+        userId: pool.userId,
+        module: rolePermissions.module,
+        canAdd: rolePermissions.canAdd,
+        canEdit: rolePermissions.canEdit,
+        canDelete: rolePermissions.canDelete,
+        canView: rolePermissions.canView,
+        canApprove: rolePermissions.canApprove,
+      })
+      .from(pool)
+      .innerJoin(roles, and(eq(roles.id, pool.roleId), eq(roles.active, true)))
+      .innerJoin(userRoles, eq(userRoles.userId, pool.userId))
+      .innerJoin(rolePermissions, eq(rolePermissions.roleId, userRoles.roleId))
+      .where(eq(pool.roleId, roleId));
+
+    const byUser = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const bucket = byUser.get(row.userId);
+      if (bucket) bucket.push(row);
+      else byUser.set(row.userId, [row]);
+    }
+    return Array.from(byUser, ([userId, grantRows]) => ({
+      userId,
+      permissions: expandGrants(grantRows),
+    }));
+  };
 
   /**
    * The M5.2 activation gate for a vendor: is every mandatory doc Verified? Composes the required set
@@ -408,18 +496,44 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         const current = steps.find((s) => s.stepNo === row.currentStepNo);
         if (!current) throw new Error("pending approval request has no current step row");
 
+        // Separation of duties + escalation (M4.3, ADR-0009/0014) — gate the acting *approve* decision.
+        // Reject is unrestricted (returning to Draft concentrates no duty); only approve advances/activates.
+        let isOverride = false;
+        if (input.decision === "approve") {
+          const decider: ApproverCandidate = {
+            userId: input.deciderUserId ?? "",
+            permissions: input.deciderPermissions,
+          };
+          const sod = {
+            submitterUserId: row.submittedBy,
+            verifierUserIds: await loadVendorVerifiers(tx, row.subjectVendorId),
+          };
+          // SoD on the decider: submitter (no self-approval) / verifier (verifier ≠ approver) → 403.
+          const ineligibility = approverIneligibility(decider, sod, APPROVE_PERMISSION);
+          if (ineligibility === "self-approval") return { ok: false, reason: "self_approval" };
+          if (ineligibility === "verifier") return { ok: false, reason: "verifier" };
+          // Escalation: if the step's role has no eligible approver, only an admin override may resolve it.
+          const candidates = await loadStepCandidates(tx, current.roleId);
+          if (!hasEligibleApprover(candidates, sod, APPROVE_PERMISSION)) {
+            if (!hasOverrideAuthority(decider)) return { ok: false, reason: "override_required" };
+            isOverride = true;
+          }
+        }
+
         const outcome = applyDecision(row.currentStepNo, steps.length, input.decision, row.trigger);
         const now = new Date();
 
         // 0. Activation gate (M5.2, ADR-0013): a registration final-approve may only activate once every
         // mandatory doc is Verified. Check *before* any write, so a blocked gate leaves the request wholly
         // untouched (no step recorded, still Pending) — the approver retries after the docs are verified.
+        // Runs after the SoD gate above: an ineligible approver is turned away on eligibility alone and
+        // never learns the gate's state.
         if (outcome.subjectEffect === "activate") {
           const gate = await computeActivationGate(tx, row.subjectVendorId);
           if (!gate.ok) return { ok: false, reason: "gate_blocked", gate };
         }
 
-        // 1. Record the decision on the current step.
+        // 1. Record the decision on the current step (flagging an admin override, ADR-0014).
         await tx
           .update(approvalRequestSteps)
           .set({
@@ -427,6 +541,7 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
             decidedBy: input.deciderUserId,
             reason: input.reason,
             decidedAt: now,
+            isOverride,
             updatedAt: now,
           })
           .where(
@@ -492,6 +607,15 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
           subjectType: "approval_request",
           subjectId: input.requestId,
         });
+        // An admin override bypassed the step's normal eligible-approver role — trace it distinctly (ADR-0014).
+        if (isOverride) {
+          await writeAudit(tx, ctx, {
+            action: "approval_request.overridden",
+            module: MODULE,
+            subjectType: "approval_request",
+            subjectId: input.requestId,
+          });
+        }
         if (outcome.subjectEffect === "activate") {
           await writeAudit(tx, ctx, {
             action: "vendor.activated",
@@ -660,15 +784,27 @@ export const approvalRoutes = (store: ApprovalStore = drizzleApprovalStore()): H
     const outcome = await store.decide(c.var.ctx, {
       requestId,
       deciderUserId: c.var.ctx.actor?.userId ?? null,
+      deciderPermissions: c.var.ctx.actor?.permissions ?? toPermissionSet([]),
       decision,
       reason,
     });
     if (!outcome.ok) {
-      if (outcome.reason === "not_found") return sendError(c, notFoundError());
-      // M5.2: a registration final-approve blocked because not every mandatory doc is Verified — a 409
-      // carrying the localized "N of M verified" + the outstanding master ids (details).
-      if (outcome.reason === "gate_blocked") return sendError(c, activationGateError(outcome.gate));
-      return sendError(c, conflictError({ messageKey: "error.approval.notPending" }));
+      switch (outcome.reason) {
+        case "not_found":
+          return sendError(c, notFoundError());
+        case "not_pending":
+          return sendError(c, conflictError({ messageKey: "error.approval.notPending" }));
+        case "self_approval":
+          return sendError(c, forbiddenError({ messageKey: "error.approval.selfApproval" }));
+        case "verifier":
+          return sendError(c, forbiddenError({ messageKey: "error.approval.verifierConflict" }));
+        case "override_required":
+          return sendError(c, forbiddenError({ messageKey: "error.approval.overrideRequired" }));
+        // M5.2: a registration final-approve blocked because not every mandatory doc is Verified — a 409
+        // carrying the localized "N of M verified" + the outstanding master ids (details).
+        case "gate_blocked":
+          return sendError(c, activationGateError(outcome.gate));
+      }
     }
     return c.json({ item: outcome.detail });
   };
