@@ -134,7 +134,29 @@ export type ChangeRequestDTO = {
   createdAt: string;
 };
 
+/**
+ * The change diff a raise POSTs (M4.6b, #67) — the client-assembled shape. Loosely typed on purpose: the
+ * console composes it from the profile form / bank block, and the server re-validates it with the shared
+ * `@vms/domain` Zod (`vendorChangeInput`) — so a bad shape returns a localized 4xx rather than being
+ * blocked at compile time on a type the client can't fully guarantee anyway.
+ */
+export type RaiseChangeInput =
+  | { kind: "non_bank"; profile: Record<string, string | number> }
+  | { kind: "bank"; banks: Record<string, unknown>[] };
+
 export const changesApi = {
+  /**
+   * Raise a post-activation edit (M4.6b, #67) — POSTs the `{kind, profile}` / `{kind, banks}` diff to
+   * `/vendors/:id/change-requests`. The server routes it (bank → AP Manager, non-bank → AP Supervisor),
+   * flags the record, and returns the opened change; its guards (422 completeness / bank-remark, 409
+   * `changePending` one-per-vendor lock) come back localized as a {@link VendorApiError}.
+   */
+  raise: (locale: string, vendorId: string, change: RaiseChangeInput): Promise<ChangeRequestDTO> =>
+    request<{ item: ChangeRequestDTO }>(`/vendors/${vendorId}/change-requests`, locale, {
+      method: "POST",
+      body: JSON.stringify(change),
+    }).then((r) => r.item),
+
   /** The vendor's open change (or `null` if none) — powers the "under review" banner. */
   current: async (locale: string, vendorId: string): Promise<ChangeRequestDTO | null> => {
     try {
