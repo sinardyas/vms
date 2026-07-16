@@ -62,7 +62,7 @@ import {
   validationError,
   vendorDraftInput,
 } from "@vms/domain";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { writeAudit } from "./audit";
 import type { AppEnv } from "./context";
@@ -116,6 +116,23 @@ export type VendorDTO = {
 export type SubmitOutcome = "submitted" | "tax_conflict";
 
 /**
+ * A vendor as the console **list** renders it (M3.7): just enough to search, badge, and open a row —
+ * name + origin/status/source + the tax-id and the category/country ids the screen resolves to labels
+ * off the masters it already loads. The full record comes from `GET /vendors/:id` when a row is opened.
+ */
+export type VendorSummaryDTO = {
+  readonly id: string;
+  readonly name: string;
+  readonly origin: Origin;
+  readonly status: string;
+  readonly source: VendorSource;
+  readonly taxId: string | null;
+  readonly categoryId: string | null;
+  readonly countryId: string | null;
+  readonly changePending: boolean;
+};
+
+/**
  * One mandatory document the vendor must supply, as the portal doc section renders it. Portal-scoped
  * (gated `vendors:view` + ownership) because the vendor role can't read the `document_master` module —
  * so the required set + its bilingual labels are surfaced here rather than from the console masters.
@@ -145,6 +162,8 @@ export type VendorStore = {
     opts: { source: VendorSource; ownerUserId: string | null },
   ) => Promise<VendorDTO>;
   readonly getById: (vendorId: string) => Promise<VendorDTO | null>;
+  /** Every vendor as a list summary, newest first — the console browse surface (M3.7). */
+  readonly list: () => Promise<VendorSummaryDTO[]>;
   /** Lenient partial update of a Draft's profile columns; `null` if the vendor is unknown. */
   readonly update: (
     ctx: RequestContext,
@@ -277,6 +296,24 @@ export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
   getById: async (vendorId) => {
     const [row] = await dbHandle.select().from(vendors).where(eq(vendors.id, vendorId)).limit(1);
     return row ? toDTO(row) : null;
+  },
+
+  list: async () => {
+    const rows = await dbHandle
+      .select({
+        id: vendors.id,
+        name: vendors.name,
+        origin: vendors.origin,
+        status: vendors.status,
+        source: vendors.source,
+        taxId: vendors.taxId,
+        categoryId: vendors.categoryId,
+        countryId: vendors.countryId,
+        changePending: vendors.changePending,
+      })
+      .from(vendors)
+      .orderBy(desc(vendors.createdAt));
+    return rows;
   },
 
   update: (ctx, vendorId, input) =>
@@ -538,6 +575,21 @@ export const vendorRoutes = (
       ownerUserId: null,
     });
     return c.json({ item }, 201);
+  });
+
+  // The console vendor **list** (M3.7). A staff (internal) actor browses every vendor; a vendor-kind
+  // actor — who has no console but does hold `vendors:view` — is scoped to the one record they own, so
+  // the list can never leak other vendors' registrations to a portal user. The portal itself resumes
+  // through `GET /vendors/me` and never calls this.
+  app.get("/vendors", requirePermission(MODULE, "view"), async (c) => {
+    const actor = c.var.ctx.actor;
+    if (!actor) return sendError(c, notFoundError());
+    const items = await store.list();
+    if (actor.kind === "vendor") {
+      const ownedId = await membership.ownedVendorId(actor.userId);
+      return c.json({ items: items.filter((v) => v.id === ownedId) });
+    }
+    return c.json({ items });
   });
 
   app.get("/vendors/:vendorId", requirePermission(MODULE, "view"), ownership, async (c) => {
