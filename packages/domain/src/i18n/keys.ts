@@ -537,6 +537,28 @@ export const catalogue = {
     en: "Unknown document type.",
   },
 
+  // --- Compliance document verification (M5.1, #68, ADR-0007/0014) ---
+  // A reject decision must carry a reason (mirrors approval reject).
+  "error.document.rejectReasonRequired": {
+    id: "Alasan penolakan wajib diisi.",
+    en: "A rejection reason is required.",
+  },
+  // Verification acts only on documents of vendors under review (Pending).
+  "error.document.vendorNotPending": {
+    id: "Dokumen hanya dapat diverifikasi saat vendor sedang ditinjau.",
+    en: "Documents can only be verified while the vendor is under review.",
+  },
+  // Only a slot's current version is verifiable; a superseded version can't be decided.
+  "error.document.notCurrentVersion": {
+    id: "Hanya versi dokumen terkini yang dapat diverifikasi.",
+    en: "Only the current document version can be verified.",
+  },
+  // The version already has a verify/reject decision — re-upload for a fresh version instead.
+  "error.document.alreadyDecided": {
+    id: "Versi dokumen ini sudah diputuskan.",
+    en: "This document version has already been decided.",
+  },
+
   // --- Shared submit gate (M3.4, #45, ADR-0004) — surfaced by the portal + office API alike. ---
   // Top-level 422 when a Draft isn't complete enough to submit; per-blocker details ride in `details`.
   "error.vendor.notSubmittable": {

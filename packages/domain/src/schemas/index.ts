@@ -15,6 +15,7 @@ import { type DomainError, validationError } from "../errors";
 import { type Result, err, ok } from "../result";
 
 export * from "./common";
+export * from "./document-verification";
 export * from "./vendor";
 export * from "./vendor-bank";
 export * from "./vendor-change";
