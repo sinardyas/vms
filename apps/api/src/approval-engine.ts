@@ -1,18 +1,22 @@
 /**
- * Approval engine — request opening at submit time (M4.2, ADR-0005/0009/0012).
+ * Approval engine — request opening (M4.2/M4.5, ADR-0005/0009/0010/0012).
  *
- * The half of the engine that runs when a subject is *submitted*: resolve the route for the trigger
+ * The half of the engine that runs when a subject *raises a request*: resolve the route for the trigger
  * from the M2.4-seeded Approval Routes master, then create the {@link approvalRequests} row and its
- * ordered {@link approvalRequestSteps}, auto-assigning the first step to its role's lead (ADR-0012).
+ * ordered {@link approvalRequestSteps}, auto-assigning the first step to its role's lead (ADR-0012). One
+ * opener serves every trigger (ADR-0005): a **registration** submit (Draft→Pending, no payload) and a
+ * post-activation **edit** (M4.5 — an Active vendor's bank/non-bank change, whose proposed **diff** rides
+ * on the request via `payload` and is applied only on final approval) both open a request the same way.
  *
  * It takes an open transaction handle rather than the ambient `db`, so the request opens **atomically
- * with the subject transition that triggers it** — the vendor store's `submit` calls this inside the
- * same tx as the Draft→Pending update, so a vendor can never reach Pending without its approval request
- * (and a failure here rolls the transition back). Kept free of any import of the vendor or approval
- * routers, so wiring it into `vendor-route`'s store creates no cycle.
+ * with the subject transition/flag that triggers it** — the vendor store's `submit` calls this inside the
+ * same tx as the Draft→Pending update, and the change store inside the same tx as setting `change_pending`
+ * — so a vendor can never reach Pending (or carry a change flag) without its approval request, and a
+ * failure here rolls the caller back. Kept free of any import of the vendor or approval routers, so
+ * wiring it into those stores creates no cycle.
  *
- * The *decisions* on an open request (approve/advance/reject/reassign) live in `approval-route.ts`;
- * this module only opens the request. Separation-of-duties on who may later decide is M4.3.
+ * The *decisions* on an open request (approve/advance/reject/reassign, and the M4.5 diff apply/discard
+ * effects) live in `approval-route.ts`; this module only opens the request.
  */
 
 import {
@@ -32,7 +36,7 @@ export type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 
 /**
  * The one-pending-change lock tripped (ADR-0010): the subject already has an open (`pending`) request, so
- * a second can't be opened until it resolves. Thrown by {@link openRegistrationRequest} (both the
+ * a second can't be opened until it resolves. Thrown by {@link openApprovalRequest} (both the
  * pre-check and, as a race backstop, the `approval_requests_one_pending_per_vendor_uq` unique violation);
  * the caller catches it via {@link isOnePendingChange} and surfaces a friendly 409 rather than a raw 500.
  */
@@ -58,23 +62,28 @@ const isOnePendingConflict = (error: unknown): boolean => {
   );
 };
 
-/** What opening a request needs: the subject vendor, the trigger to route on, and who submitted it. */
+/**
+ * What opening a request needs: the subject vendor, the trigger to route on, who submitted it, and — for
+ * a post-activation **edit** (M4.5) — the proposed `payload` (diff) to persist on the request and apply
+ * only on final approval. Registration opens carry no payload.
+ */
 export type OpenRequestInput = {
   readonly vendorId: string;
   readonly trigger: ApprovalTrigger;
   readonly submitterUserId: string | null;
+  readonly payload?: Record<string, unknown>;
 };
 
 /**
  * Open an ApprovalRequest for `input` inside the transaction `tx`: resolve the active route for the
- * trigger, insert the request + its ordered steps, assign step 1 to its role's lead, and audit the
- * opening. Returns the new request id.
+ * trigger, insert the request (with the edit diff on `payload`, if any) + its ordered steps, assign step 1
+ * to its role's lead, and audit the opening. Returns the new request id.
  *
  * Throws if no active route (or no steps) is configured for the trigger — a seeding/config invariant
- * (the M2.4 seed guarantees one route per trigger), so it rolls the submit transaction back rather than
- * stranding a Pending subject with no workflow.
+ * (the M2.4 seed guarantees one route per trigger), so it rolls the caller's transaction back rather than
+ * stranding a subject with no workflow.
  */
-export const openRegistrationRequest = async (
+export const openApprovalRequest = async (
   tx: Tx,
   ctx: RequestContext,
   input: OpenRequestInput,
@@ -126,6 +135,7 @@ export const openRegistrationRequest = async (
         subjectVendorId: input.vendorId,
         trigger: input.trigger,
         status: "pending",
+        payload: input.payload ?? null,
         routeId: route.id,
         currentStepNo: 1,
         submittedBy: input.submitterUserId,

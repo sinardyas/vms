@@ -10,12 +10,17 @@
  * it — the step decision, the request's advance/resolve, the subject effect, and the audit — in one
  * transaction.
  *
+ * **Effects by trigger (ADR-0005):** the pure `applyDecision` reads the request's trigger to decide what
+ * resolution *means*. A **registration** final-approve activates the vendor (reject → Draft); a
+ * post-activation **edit** (M4.5 — bank/non-bank change) instead **applies its diff** to the still-Active
+ * vendor (reject → **discards** it), then clears `change_pending` — the `apply_change`/`discard_change`
+ * effects, landed by {@link applyVendorChange}/{@link discardVendorChange} in this same decide tx.
+ *
  * **Scope boundary (M4.2):** deciding is gated only by RBAC (`approvals:approve`) here. Separation of
  * duties (no self-approval, verifier ≠ approver) and the zero-eligible → admin-override escalation are
  * **M4.3** — the eligibility primitive ({@link approverIneligibility}, M1.6) plugs in at the decide
- * handler. Final approval activates the vendor **unconditionally**; **M5.2** inserts the
- * all-mandatory-docs-Verified activation gate at the `activate` effect below. Post-activation edit
- * triggers (bank/non-bank change) are **M4.5**; this ticket wires the registration triggers.
+ * handler. Registration final-approval activates the vendor **unconditionally**; **M5.2** inserts the
+ * all-mandatory-docs-Verified activation gate at the `activate` effect below.
  *
  * Stores are injectable so the whole surface is testable without Postgres; the router is mounted at
  * `/console/approvals` (internal console), RBAC-gated on the `approvals` module, every mutation audited.
@@ -46,6 +51,7 @@ import { writeAudit } from "./audit";
 import type { AppEnv } from "./context";
 import { sendError } from "./http-error";
 import { requirePermission } from "./rbac";
+import { applyVendorChange, discardVendorChange } from "./vendor-change";
 
 /** The approval engine gates on its own RBAC module (ADR-0012). */
 const MODULE = "approvals" as const;
@@ -153,6 +159,7 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         status: approvalRequests.status,
         currentStepNo: approvalRequests.currentStepNo,
         routeId: approvalRequests.routeId,
+        payload: approvalRequests.payload,
         submittedBy: approvalRequests.submittedBy,
         resolvedAt: approvalRequests.resolvedAt,
         createdAt: approvalRequests.createdAt,
@@ -286,7 +293,7 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         const current = steps.find((s) => s.stepNo === row.currentStepNo);
         if (!current) throw new Error("pending approval request has no current step row");
 
-        const outcome = applyDecision(row.currentStepNo, steps.length, input.decision);
+        const outcome = applyDecision(row.currentStepNo, steps.length, input.decision, row.trigger);
         const now = new Date();
 
         // 1. Record the decision on the current step.
@@ -329,7 +336,9 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
             .where(eq(approvalRequests.id, input.requestId));
         }
 
-        // 3. Apply the subject effect. Registration: final approve → vendor Active; reject → Draft.
+        // 3. Apply the subject effect (ADR-0005). Registration: final approve → vendor Active; reject →
+        // Draft. Edit (M4.5): final approve → apply the diff to the still-Active vendor + clear the flag;
+        // reject → discard the diff + clear the flag (the vendor is untouched either way).
         if (outcome.subjectEffect === "activate") {
           // M5.2 inserts the activation gate here (block until all mandatory docs are Verified).
           await tx
@@ -341,6 +350,10 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
             .update(vendors)
             .set({ status: "draft", updatedAt: now })
             .where(eq(vendors.id, row.subjectVendorId));
+        } else if (outcome.subjectEffect === "apply_change") {
+          await applyVendorChange(tx, ctx, row.subjectVendorId, row.payload);
+        } else if (outcome.subjectEffect === "discard_change") {
+          await discardVendorChange(tx, ctx, row.subjectVendorId);
         }
 
         // 4. Audit — the request decision, plus the vendor state change it caused.
