@@ -351,6 +351,45 @@ export const catalogue = {
     en: "Show in bank currency selector",
   },
 
+  // --- Operational Lists console (M2.5, #36) — the six behaviorally-inert reference lists. ---
+  // Reuses the generic `regLists.*` chrome (loading/save/edit/status/actions); adds only its own
+  // title, subtitle, tabs, and the fields the registration lists don't have.
+  "opsLists.title": { id: "Daftar Operasional", en: "Operational Lists" },
+  "opsLists.subtitle": {
+    id: "Daftar referensi operasional yang dikelola di Fase-0 namun belum digunakan oleh proses apa pun (ADR-0002). Ambang SLA disimpan sebagai konfigurasi yang tidak aktif — tidak ada pengatur waktu langsung di Fase-0.",
+    en: "Operational reference lists managed in Phase-0 but not yet acted on by any workflow (ADR-0002). SLA thresholds are stored as inert config — no live timers run in Phase-0.",
+  },
+  "opsLists.slaInert": {
+    id: "Konfigurasi tidak aktif: ambang SLA disimpan tetapi tidak ditegakkan di Fase-0.",
+    en: "Inert config: SLA thresholds are stored but not enforced in Phase-0.",
+  },
+
+  // Tabs (singular list names).
+  "opsLists.tab.departments": { id: "Departemen", en: "Department" },
+  "opsLists.tab.soechiEntities": { id: "Entitas Soechi", en: "Soechi Entity" },
+  "opsLists.tab.vessels": { id: "Kapal", en: "Vessel" },
+  "opsLists.tab.ports": { id: "Pelabuhan", en: "Port" },
+  "opsLists.tab.taxCodes": { id: "Kode Pajak", en: "Tax Code" },
+  "opsLists.tab.slaThresholds": { id: "Ambang SLA", en: "SLA Threshold" },
+
+  // Fields / columns specific to the operational lists.
+  "opsLists.f.vesselType": { id: "Jenis Kapal", en: "Vessel type" },
+  "opsLists.f.tz": { id: "Zona Waktu", en: "Time zone" },
+  "opsLists.f.lat": { id: "Lintang", en: "Latitude" },
+  "opsLists.f.lon": { id: "Bujur", en: "Longitude" },
+  "opsLists.f.label": { id: "Label", en: "Label" },
+  "opsLists.f.labelId": { id: "Label (ID)", en: "Label (ID)" },
+  "opsLists.f.labelEn": { id: "Label (EN)", en: "Label (EN)" },
+  "opsLists.f.rate": { id: "Tarif", en: "Rate" },
+  "opsLists.f.basis": { id: "Dasar", en: "Basis" },
+  "opsLists.f.appliesTo": { id: "Berlaku Untuk", en: "Applies to" },
+  "opsLists.f.stage": { id: "Tahap", en: "Stage" },
+  "opsLists.f.stageId": { id: "Tahap (ID)", en: "Stage (ID)" },
+  "opsLists.f.stageEn": { id: "Tahap (EN)", en: "Stage (EN)" },
+  "opsLists.f.target": { id: "Target", en: "Target" },
+  "opsLists.f.warnAt": { id: "Peringatan Pada", en: "Warn at" },
+  "opsLists.f.email": { id: "Notifikasi Email", en: "Email notification" },
+
   // --- Document Master origin applicability (ADR-0013). ---
   "enum.appliesTo.local": { id: "Dalam Negeri", en: "Local" },
   "enum.appliesTo.foreign": { id: "Luar Negeri", en: "Foreign" },

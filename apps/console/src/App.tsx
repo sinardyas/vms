@@ -9,6 +9,7 @@ import {
   Handshake,
   Invoice,
   ListChecks,
+  Package,
   SealCheck,
   ShieldCheck,
   SquaresFour,
@@ -34,6 +35,7 @@ import { AccessAdmin } from "./features/access-admin";
 import { ApprovalRoutes } from "./features/approval-routes";
 import { AuditLog } from "./features/audit-log";
 import { DocumentMaster } from "./features/document-master";
+import { OperationalLists } from "./features/operational-lists";
 import { RegistrationLists } from "./features/registration-lists";
 import { loadCapabilities } from "./lib/api";
 
@@ -59,6 +61,7 @@ const NAV: NavGroup[] = [
     label: "Administration",
     items: [
       { key: "master-data", label: "Master Data", icon: ClipboardText },
+      { key: "operational-lists", label: "Operational Lists", icon: Package },
       { key: "document-master", label: "Document Master", icon: FileText },
       { key: "approval-routes", label: "Approval Routes", icon: FlowArrow },
       { key: "access", label: "Access Control", icon: ShieldCheck },
@@ -78,6 +81,7 @@ const TITLES: Record<string, string> = {
   contracts: "POs & Contracts",
   communications: "Communications",
   "master-data": "Master Data",
+  "operational-lists": "Operational Lists",
   "document-master": "Document Master",
   "approval-routes": "Approval Routes",
   access: "Access Control",
@@ -105,6 +109,7 @@ const NAV_GATE: Partial<Record<string, RbacModule>> = {
   verification: "documents",
   approvals: "approvals",
   "master-data": "registration_lists",
+  "operational-lists": "operational_lists",
   "document-master": "document_master",
   "approval-routes": "approval_routes",
   access: "access",
@@ -168,6 +173,8 @@ function Console() {
         <AccessAdmin />
       ) : current === "master-data" ? (
         <RegistrationLists />
+      ) : current === "operational-lists" ? (
+        <OperationalLists />
       ) : current === "document-master" ? (
         <DocumentMaster />
       ) : current === "approval-routes" ? (

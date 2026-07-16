@@ -15,6 +15,7 @@ import { db } from "./index";
 import { seedAccess } from "./seed/access";
 import { seedApprovalRoutes } from "./seed/approval-routes";
 import { seedDocumentMaster } from "./seed/document-master";
+import { seedOperationalLists } from "./seed/operational-lists";
 import { seedRegistrationLists } from "./seed/registration-lists";
 
 async function main() {
@@ -45,6 +46,15 @@ async function main() {
   console.log(
     `[seed] document master: ${docs.documents} documents, ${docs.requirements} category requirements ` +
       `(${docs.skippedRequirements} skipped) (idempotent).`,
+  );
+
+  // Operational lists must follow registration lists — ports resolve country_id from seeded countries.
+  const ops = await seedOperationalLists(db);
+  // biome-ignore lint/suspicious/noConsole: seed progress belongs in stdout for container logs.
+  console.log(
+    `[seed] operational lists: ${ops.departments} departments, ${ops.soechiEntities} soechi entities, ` +
+      `${ops.vessels} vessels, ${ops.ports} ports, ${ops.taxCodes} tax codes, ` +
+      `${ops.slaThresholds} sla thresholds (idempotent).`,
   );
 }
 
