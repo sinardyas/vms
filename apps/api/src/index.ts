@@ -15,8 +15,10 @@ import { meRoutes } from "./me-route";
 import { operationalListRoutes } from "./operational-lists-route";
 import { registrationListRoutes } from "./registration-lists-route";
 import { sessionActorResolver } from "./session-actor";
+import { requireVendorOwnership } from "./vendor-access";
 import { vendorBanksRoutes } from "./vendor-banks-route";
 import { vendorDocumentsRoutes } from "./vendor-documents-route";
+import { vendorRoutes } from "./vendor-route";
 
 const app = new Hono<AppEnv>();
 
@@ -85,6 +87,17 @@ app.route("/console/approval-routes", approvalRouteRoutes());
 // on (ADR-0002). Each is a thin instantiation of the M2.1 framework, gated on `operational_lists` and
 // audited atomically; `sla_thresholds` is captured but deliberately not enforced (config, not behaviour).
 app.route("/console/operational-lists", operationalListRoutes());
+
+// M3.5 (#46): own-vendor scoping — a vendor-kind actor may only reach a `:vendorId` they belong to
+// (internal staff bypass, bounded by RBAC). Mounted BEFORE the vendor sub-routers so it guards their
+// `:vendorId` bank/document paths; the aggregate route enforces the same on its own read/edit/submit.
+app.use("/vendors/:vendorId/*", requireVendorOwnership());
+
+// M3.5 (#46): Vendor aggregate root — self-registration capture + submit (account-first, resumable
+// Draft → Pending). `GET /vendors/me` resumes; `POST /vendors` creates a Draft + owner link; PUT saves
+// leniently; `POST /vendors/:id/submit` runs the M3.4 whole-aggregate gate then transitions Draft→
+// Pending, catching the `tax_id` partial-unique as a friendly 409. Gated on `vendors`, audited.
+app.route("/vendors", vendorRoutes());
 
 // M3.2 (#43): Vendor bank accounts + attachments — the vendor-scoped bank block (CRUD + M:N currencies
 // + MinIO proof/KTP/surat uploads with signed-URL reads), gated on `vendors`. Enforces the ADR-0013/0005
