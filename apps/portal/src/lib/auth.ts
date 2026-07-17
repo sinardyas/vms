@@ -37,3 +37,15 @@ export const signIn = (email: string, password: string): Promise<AuthResult> =>
 
 /** End the session. */
 export const signOut = (): Promise<AuthResult> => post("/api/auth/sign-out", {});
+
+/**
+ * Set the account's password from an emailed token (M6.5d, #92) — an office invite's first password
+ * (#78) or a reset. The token comes off the landing page's query, put there by better-auth's
+ * redirect; the field is `newPassword`, not `password`.
+ *
+ * A non-2xx is almost always `INVALID_TOKEN`, which better-auth returns for an invalid, an expired,
+ * *and* an already-consumed token alike — the caller can't tell them apart, so it must not pretend to.
+ * This mints **no session**: the caller signs in afterwards to land the vendor in one.
+ */
+export const setPassword = (token: string, newPassword: string): Promise<AuthResult> =>
+  post("/api/auth/reset-password", { token, newPassword });
