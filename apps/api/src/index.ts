@@ -18,10 +18,11 @@ import { notificationRoutes } from "./notifications-route";
 import { operationalListRoutes } from "./operational-lists-route";
 import { registrationListRoutes } from "./registration-lists-route";
 import { sessionActorResolver } from "./session-actor";
-import { requireVendorOwnership } from "./vendor-access";
+import { requireInternalActor, requireVendorOwnership } from "./vendor-access";
 import { vendorBanksRoutes } from "./vendor-banks-route";
 import { vendorChangeRoutes } from "./vendor-change-route";
 import { vendorDocumentsRoutes } from "./vendor-documents-route";
+import { vendorLifecycleRoutes } from "./vendor-lifecycle-route";
 import { vendorRoutes } from "./vendor-route";
 
 const app = new Hono<AppEnv>();
@@ -150,5 +151,18 @@ app.route("/vendors", vendorDocumentsRoutes());
 // `change_pending`, applied only on final approval (`vendor-change.ts`, run in the approval decide tx).
 // Gated on `vendors`, own-vendor scoped, audited.
 app.route("/vendors", vendorChangeRoutes());
+
+// M6.4 (#80): Vendor service lifecycle — deactivate (Active→Inactive, direct, `vendors:delete` = sysadmin
+// only among the seeded roles) + raise a reactivation (Inactive→Active via the seeded AP-Manager route,
+// ADR-0009). Staff-only rather than own-vendor-scoped: a vendor holds `vendors:delete`/`vendors:edit` on
+// its own record for Draft self-correction, so RBAC alone would let it deactivate itself or vote itself
+// back into service — `requireInternalActor` is what forbids that, and it is mounted here (not in the
+// router) to mirror how the ownership guard is applied above. The reactivation's *resolution* is the
+// approval engine's (`approval-route.ts`): approve → the shared `activate` effect + the M5.2 gate,
+// reject → `keep_inactive`.
+const internalOnly = requireInternalActor();
+app.use("/vendors/:vendorId/deactivate", internalOnly);
+app.use("/vendors/:vendorId/reactivate", internalOnly);
+app.route("/vendors", vendorLifecycleRoutes());
 
 export default { port: env.port, fetch: app.fetch };

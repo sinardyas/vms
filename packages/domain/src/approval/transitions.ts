@@ -1,9 +1,10 @@
 /**
- * Registration lifecycle transitions — freeze + recall predicates (M4.4, #59, ADR-0010/0014).
+ * Vendor lifecycle transitions — freeze, recall, and service-state predicates (M4.4/#59 + M6.4/#80,
+ * ADR-0009/0010/0014).
  *
- * The pure rules governing *when* a vendor under registration may be changed, layered on top of the
- * M4.2 decision core ({@link applyDecision}). Two invariants live here, stack-neutral and DB-free so the
- * portal, the console, and the API store all read the same bar:
+ * The pure rules governing *when* a vendor may be changed, layered on top of the M4.2 decision core
+ * ({@link applyDecision}). These invariants live here, stack-neutral and DB-free so the portal, the
+ * console, and the API store all read the same bar:
  *
  *   1. **Freeze (ADR-0014)** — Draft is the only editable state. The moment a vendor is submitted it
  *      becomes `pending`/`pending_hod` and its profile, banks, and documents are *immutable*; to change
@@ -14,6 +15,11 @@
  *      decision is recorded*: once the first step is approved (or the request rejected), "what was
  *      approved is what you get" takes over and change goes through a reject instead. {@link isRecallable}
  *      encodes that window — the request is still `pending` and no step carries a decision.
+ *
+ *   3. **Service state (ADR-0009, M6.4)** — the Inactive↔Active pair. {@link canDeactivate} and
+ *      {@link canReactivate} say only *which state* permits the move; they deliberately don't know that
+ *      deactivation is a direct act while reactivation needs an AP-Manager approval, because that is
+ *      routing (the M2.4 route table), not lifecycle.
  *
  * The one-pending-change lock (an active vendor with a change in flight can't open another, ADR-0010) is
  * enforced at the persistence edge by the `approval_requests_one_pending_per_vendor_uq` partial index and
@@ -43,3 +49,24 @@ export const isRecallable = (
   requestStatus: ApprovalStatus,
   stepDecisions: readonly StepDecision[],
 ): boolean => requestStatus === "pending" && stepDecisions.every((d) => d === "pending");
+
+/**
+ * May this vendor be taken out of service (Active→Inactive, M6.4)? Only from **Active** — the only state
+ * that represents a vendor currently in service. Draft/Pending have nothing to withdraw (they were never
+ * live; abandoning them is what Draft *is*), and Inactive is already the destination, so re-deactivating
+ * is a no-op dressed as a transition.
+ *
+ * `blacklisted` is deliberately **not** deactivatable: it is a stricter terminal state owned by the
+ * Phase-3 violations pillar, and letting a deactivate soften it to Inactive would launder a sanction.
+ */
+export const canDeactivate = (status: VendorStatus): boolean => status === "active";
+
+/**
+ * May a reactivation be raised for this vendor (Inactive→Active, ADR-0009)? Only from **Inactive**. This
+ * gates *raising* the request, not the activation itself — the AP-Manager route decides that, and the
+ * M5.2 document gate still has to clear before the final approve lands the vendor Active.
+ *
+ * `blacklisted` is excluded for the same reason as {@link canDeactivate}: reactivating out of a sanction
+ * would route around the pillar that imposed it.
+ */
+export const canReactivate = (status: VendorStatus): boolean => status === "inactive";
