@@ -25,6 +25,7 @@ import {
 import {
   AppShell,
   type AppUser,
+  Button,
   CapabilitiesProvider,
   Card,
   CardContent,
@@ -46,12 +47,14 @@ import { AccessAdmin } from "./features/access-admin";
 import { ApprovalRoutes } from "./features/approval-routes";
 import { Approvals } from "./features/approvals";
 import { AuditLog } from "./features/audit-log";
+import { AuthScreen } from "./features/auth-screen";
 import { DocumentMaster } from "./features/document-master";
 import { DocumentVerification } from "./features/document-verification";
 import { OperationalLists } from "./features/operational-lists";
 import { RegistrationLists } from "./features/registration-lists";
 import { Vendors } from "./features/vendors";
 import { loadCapabilities } from "./lib/api";
+import { signOut } from "./lib/auth";
 import { notificationApi } from "./lib/notifications";
 
 /**
@@ -207,9 +210,16 @@ function Console() {
   // Land on the Phase-0 work surface. (Until M6.5 this was "dashboard", which rendered the design-
   // system gallery — so every staff session opened onto a fidelity-review scaffold.)
   const [active, setActive] = useState("vendors");
-  const { can, actor } = useCapabilities();
+  const { can, actor, reload } = useCapabilities();
   const { locale } = useLocale();
   const t = useT();
+
+  // End the session, then re-read the mirror: it comes back `null` → status "anonymous" → the gate in
+  // `Root()` swaps the shell for the sign-in card. Nothing here decides that; the mirror does.
+  const doSignOut = async () => {
+    await signOut();
+    reload();
+  };
 
   // Resolve labels here, not at module scope: `t` changes with the locale, so the nav re-renders in
   // the chosen language. Hide any real section the actor can't `view`; keep ungated items.
@@ -254,6 +264,9 @@ function Console() {
             onNavigate={(link) => setActive(sectionFor(link))}
           />
           <LocaleSwitch />
+          <Button variant="ghost" size="sm" onClick={doSignOut}>
+            {t("console.auth.signOut")}
+          </Button>
         </div>
       }
     >
@@ -286,12 +299,42 @@ function Console() {
   );
 }
 
+/**
+ * Session gate (M6.5g, #97): loading → a holding line; no session → the sign-in card; signed in → the
+ * console. Mirrors the portal's `Root()`.
+ *
+ * Until this ticket the console rendered `<Console/>` unconditionally, which was only survivable
+ * because the API's `DEV_ACTOR=1` seam resolved a fake superuser for every request. With a real
+ * session required — as staging/prod already require, since they pin `NODE_ENV=production` and the
+ * seam force-disables — an anonymous caller saw the shell with its nav gated down to the ungated
+ * items and no way to sign in. The gate is what makes `DEV_ACTOR=0` a usable configuration.
+ *
+ * "error" lands on the sign-in card alongside "anonymous": a `/me` that won't load means the console
+ * can't know what this actor may do, and offering a signed-in shell it can't gate would be a lie.
+ */
+function Root() {
+  const t = useT();
+  const { status, reload } = useCapabilities();
+
+  if (status === "loading") {
+    return (
+      <div className="flex h-screen items-center justify-center text-muted-foreground">
+        {t("console.auth.loading")}
+      </div>
+    );
+  }
+  if (status === "anonymous" || status === "error") {
+    return <AuthScreen onSignedIn={reload} />;
+  }
+  return <Console />;
+}
+
 export default function App() {
   return (
     <LocaleProvider>
       <ToastProvider>
         <CapabilitiesProvider load={loadCapabilities}>
-          <Console />
+          <Root />
         </CapabilitiesProvider>
       </ToastProvider>
     </LocaleProvider>
