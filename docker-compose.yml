@@ -100,6 +100,12 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@postgres:5432/${POSTGRES_DB:-vms}
       # Walking skeleton (#8): stand in a fake authenticated actor so the end-to-end spine runs
       # before M1 auth. Dev-only — the staging overlay pins NODE_ENV=production, which disables it.
+      #
+      # This default is scheduled to flip to 0 (#99). Defaulting to 1 is what let the console ship for
+      # six milestones with no auth surface at all (#97): the dev stack never exercised the login path
+      # that staging/prod depend on, so nobody noticed there wasn't one. The flip waits on the seeded
+      # staff accounts (#88) — with an empty `users` table, DEV_ACTOR=0 gives a sign-in screen and no
+      # credential that opens it. Until then: `DEV_ACTOR=0 docker compose up` exercises the real path.
       DEV_ACTOR: ${DEV_ACTOR:-1}
       # Browser origins allowed to call the API (the console / portal SPAs).
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3002}
