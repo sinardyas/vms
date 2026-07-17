@@ -64,6 +64,7 @@ import {
   applyDecision,
   approverIneligibility,
   conflictError,
+  decisionNoticeKind,
   forbiddenError,
   hasEligibleApprover,
   hasOverrideAuthority,
@@ -200,8 +201,14 @@ export type DecideInput = {
  * only split that keeps both halves honest.
  */
 export type DecideNotices = {
-  /** Set when this decision resolved a **registration** — the vendor is told approved/rejected. */
-  readonly decision: { readonly outcome: "approved" | "rejected" } | null;
+  /**
+   * Set when this decision moved the vendor's **own** standing — they're told approved/rejected.
+   * `kind` carries which register the copy takes (registration vs reactivation, M6.5e).
+   */
+  readonly decision: {
+    readonly outcome: "approved" | "rejected";
+    readonly kind: "registration" | "reactivation";
+  } | null;
   /** Set when the decision advanced the route — the next step's auto-assigned approver is told. */
   readonly nextAssignment: StepAssignment | null;
   /** Set when activation provisioned an office vendor's owner — their invite address (M6.2). */
@@ -715,25 +722,19 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
 
         const detail = await buildDetail(tx, input.requestId);
         if (!detail) throw new Error("approval request vanished mid-decision");
+        const noticeKind = decisionNoticeKind(row.trigger);
         return {
           ok: true,
           detail,
           notices: {
-            // Only a **registration** resolution is the vendor's news. An edit (M4.5) is staff
-            // re-approving a change on a record that stays Active throughout — the vendor's own
-            // lifecycle didn't move, and the catalogue scopes `decision` to registrations.
-            //
-            // A **reactivation** (M6.4) is excluded for the second reason but not the first: the vendor's
-            // lifecycle very much moved, yet `decision` renders "Registration approved/rejected" over a
-            // CTA to "Resume registration" (`notify.decision.*`). Sent to a dormant vendor who submitted
-            // nothing, that copy is wrong on both counts and would point them at a flow they can't walk.
-            // Silence beats a misleading notice; a reactivation-shaped event is left to M6.5.
+            // Whether the vendor hears this at all, and in which register, is `decisionNoticeKind`'s
+            // rule (M6.5e) — it lives beside the trigger families it reads. Here we add only the one
+            // fact the domain can't know: a decision that merely *advanced* the route resolved
+            // nothing, so there is no verdict to announce yet.
             decision:
-              isEditTrigger(row.trigger) ||
-              isReactivationTrigger(row.trigger) ||
-              outcome.requestStatus === "pending"
-                ? null
-                : { outcome: outcome.requestStatus },
+              noticeKind && outcome.requestStatus !== "pending"
+                ? { outcome: outcome.requestStatus, kind: noticeKind }
+                : null,
             nextAssignment,
             officeInviteEmail,
           },
@@ -854,9 +855,14 @@ const dispatchDecisionNotices = async (
       vendorId: detail.subjectVendorId,
       vendorName: detail.vendorName,
       outcome: notices.decision.outcome,
+      kind: notices.decision.kind,
       reason,
       // An approved vendor lands on their record; a rejected one lands where the work is — the
-      // registration they now have to fix. Both live in the portal, which is the vendor's world.
+      // registration they now have to fix. Both live in the portal, which is the vendor's world, and
+      // the portal has no router: every non-document path resolves to the same section (`App.tsx`),
+      // which renders the wizard for a Draft and the read-only status view for anything else. So this
+      // one URL is already both destinations — including a reactivating vendor's, who is never in
+      // Draft and so always lands on the record their notice is about.
       url: `${env.portalUrl}/registration`,
     });
   }
