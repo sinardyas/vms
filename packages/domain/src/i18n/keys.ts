@@ -105,9 +105,15 @@ export const catalogue = {
   "enum.rbacModule.access": { id: "Kontrol Akses", en: "Access Control" },
   "enum.rbacModule.audit": { id: "Log Audit", en: "Audit Log" },
 
+  // --- App shell chrome (M0.5) ---
+  // The shell's *own* controls. Caller-supplied labels (nav, page title) arrive already-translated;
+  // these are the frame's, so `AppShell`/`LocaleSwitch` resolve them directly (M6.5, #90).
+  "shell.aria.openMenu": { id: "Buka menu", en: "Open menu" },
+  "shell.aria.closeMenu": { id: "Tutup menu", en: "Close menu" },
+  "shell.aria.language": { id: "Bahasa", en: "Language" },
+
   // --- "Coming in a later phase" shells for out-of-Phase-0 sections (#9) ---
   "soon.badge": { id: "Fase Mendatang", en: "Later Phase" },
-  "soon.title": { id: "Hadir pada fase berikutnya", en: "Coming in a later phase" },
   "soon.description": {
     id: "Bagian ini bukan bagian dari build Fase-0 yang sedang diuji. Fitur ini hadir pada rilis berikutnya — menu menampilkan keseluruhan peta produk, namun hanya layar Fase-0 yang aktif untuk UAT ini.",
     en: "This section isn't part of the Phase-0 build under test. It arrives in a later release — the menu shows the whole product map, but only Phase-0 screens are live for this UAT.",
@@ -198,7 +204,6 @@ export const catalogue = {
   "access.loading": { id: "Memuat…", en: "Loading…" },
   "access.loadError": { id: "Gagal memuat data akses.", en: "Couldn't load access data." },
   "access.saveError": { id: "Gagal menyimpan perubahan.", en: "Couldn't save the change." },
-  "access.retry": { id: "Coba lagi", en: "Retry" },
   "access.cancel": { id: "Batal", en: "Cancel" },
   "access.save": { id: "Simpan", en: "Save" },
   "access.saving": { id: "Menyimpan…", en: "Saving…" },
@@ -434,6 +439,14 @@ export const catalogue = {
   "docMaster.f.no": { id: "No.", en: "No." },
   "docMaster.f.name": { id: "Nama Dokumen", en: "Document Name" },
   "docMaster.f.type": { id: "Jenis", en: "Type" },
+  "docMaster.f.typePlaceholder": {
+    id: "Legal · Pajak · HSE · Keuangan · Kategori · Bank…",
+    en: "Legal · Tax · HSE · Finance · Category · Bank…",
+  },
+  "docMaster.f.reminderPlaceholder": {
+    id: "Nonaktif · 2 minggu · 1 bulan",
+    en: "Off · 2 weeks · 1 month",
+  },
   "docMaster.f.appliesTo": { id: "Berlaku Untuk", en: "Applies To" },
   "docMaster.f.validityDays": { id: "Masa Berlaku (hari)", en: "Validity (days)" },
   "docMaster.f.mandatory": { id: "Wajib", en: "Mandatory" },
@@ -495,7 +508,6 @@ export const catalogue = {
   "approvalRoutes.editSteps": { id: "Ubah langkah", en: "Edit steps" },
   "approvalRoutes.stepsTitle": { id: "Langkah untuk {route}", en: "Steps for {route}" },
   "approvalRoutes.stepN": { id: "Langkah {n}", en: "Step {n}" },
-  "approvalRoutes.stepRole": { id: "Peran penyetuju", en: "Approver role" },
   "approvalRoutes.addStep": { id: "Tambah langkah", en: "Add step" },
   "approvalRoutes.removeStep": { id: "Hapus", en: "Remove" },
   "approvalRoutes.moveUp": { id: "Naik", en: "Move up" },
@@ -725,6 +737,10 @@ export const catalogue = {
   "portal.nav.dashboard": { id: "Beranda", en: "Dashboard" },
   "portal.nav.registration": { id: "Pendaftaran Saya", en: "My Registration" },
   "portal.nav.documents": { id: "Dokumen", en: "Documents" },
+  // Out-of-Phase-0 sections — the nav shows the whole product map, these route to the shell (#9).
+  "portal.nav.invoices": { id: "Faktur", en: "Invoices" },
+  "portal.nav.orders": { id: "Pesanan Pembelian", en: "Purchase Orders" },
+  "portal.nav.messages": { id: "Komunikasi", en: "Communications" },
 
   "portal.common.save": { id: "Simpan", en: "Save" },
   "portal.common.saveDraft": { id: "Simpan draft", en: "Save draft" },
@@ -934,6 +950,36 @@ export const catalogue = {
   "portal.status.draftBody": {
     id: "Pendaftaran Anda masih berupa draft. Lengkapi dan kirim saat siap.",
     en: "Your registration is still a draft. Complete and submit it when ready.",
+  },
+
+  // --- Console UI chrome (M0.5; keyed in M6.5, #90) ---
+  // The staff console's own nav + page titles. Each section's page title *is* its nav label, so these
+  // keys serve both — one string per section, no parallel title catalogue to drift out of sync.
+  "console.shell.subtitle": { id: "Konsol Staf", en: "Staff Console" },
+  // Shown where the header names the signed-in actor's role and they hold none. Honest rather than
+  // blank: a role-less staff account is exactly why their nav is empty (grants come from roles).
+  "console.shell.noRole": { id: "Tanpa peran", en: "No role" },
+  "console.group.operations": { id: "Operasional", en: "Operations" },
+  "console.group.administration": { id: "Administrasi", en: "Administration" },
+  "console.nav.dashboard": { id: "Beranda", en: "Dashboard" },
+  "console.nav.vendors": { id: "Vendor", en: "Vendors" },
+  "console.nav.verification": { id: "Verifikasi Dokumen", en: "Document Verification" },
+  "console.nav.approvals": { id: "Persetujuan", en: "Approvals" },
+  "console.nav.invoices": { id: "Pemrosesan Faktur", en: "Invoice Processing" },
+  "console.nav.contracts": { id: "PO & Kontrak", en: "POs & Contracts" },
+  "console.nav.communications": { id: "Komunikasi", en: "Communications" },
+  "console.nav.masterData": { id: "Data Master", en: "Master Data" },
+  "console.nav.operationalLists": { id: "Daftar Operasional", en: "Operational Lists" },
+  "console.nav.documentMaster": { id: "Master Dokumen", en: "Document Master" },
+  "console.nav.approvalRoutes": { id: "Rute Persetujuan", en: "Approval Routes" },
+  "console.nav.access": { id: "Kontrol Akses", en: "Access Control" },
+  "console.nav.audit": { id: "Log Audit", en: "Audit Log" },
+  "console.nav.components": { id: "Sistem Desain", en: "Design System" },
+  "console.nav.reports": { id: "Laporan", en: "Reports" },
+  // An in-scope Phase-0 screen that hasn't landed yet — distinct from the out-of-Phase-0 `soon` shell.
+  "console.placeholder.body": {
+    id: "Kerangka Fase-0. Layar ini hadir pada milestone berikutnya.",
+    en: "Phase-0 scaffold. This screen lands in a later milestone.",
   },
 
   // --- Console office registration (M3.6, #47) — staff register a vendor on-behalf → Pending-HOD ---

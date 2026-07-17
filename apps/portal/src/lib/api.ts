@@ -7,7 +7,8 @@
  * `?lang` (server localizes its errors), and the JSON-vs-multipart body handling all live in one place.
  */
 
-import type { CapabilityFlags } from "@vms/domain";
+import type { CapabilityFlags, SessionIdentity } from "@vms/domain";
+import type { CapabilitiesSnapshot } from "@vms/ui";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
@@ -68,14 +69,15 @@ export async function request<T>(path: string, locale: string, init?: RequestIni
 }
 
 /**
- * Load the signed-in vendor's capability grid from `GET /me` (M1.3). `credentials: "include"` sends the
- * better-auth session cookie cross-origin. A 401 means no session (or unverified email) → `null`, so the
- * app treats "not signed in" as deny-all and shows the auth screens rather than erroring.
+ * Load the `GET /me` mirror (M1.3) — the signed-in vendor's identity + capability grid.
+ * `credentials: "include"` sends the better-auth session cookie cross-origin. A 401 means no session
+ * (or unverified email) → `null`, so the app treats "not signed in" as deny-all and shows the auth
+ * screens rather than erroring.
  */
-export async function loadCapabilities(): Promise<CapabilityFlags | null> {
+export async function loadCapabilities(): Promise<CapabilitiesSnapshot | null> {
   const res = await fetch(apiUrl("/me"), { credentials: "include" });
   if (res.status === 401) return null;
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body = (await res.json()) as { capabilities: CapabilityFlags };
-  return body.capabilities;
+  const body = (await res.json()) as { actor: SessionIdentity; capabilities: CapabilityFlags };
+  return { actor: body.actor, flags: body.capabilities };
 }
