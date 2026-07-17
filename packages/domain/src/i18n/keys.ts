@@ -79,6 +79,15 @@ export const catalogue = {
   "enum.npwpType.head_office": { id: "Kantor Pusat", en: "Head Office" },
   "enum.npwpType.branch": { id: "Cabang", en: "Branch" },
 
+  // Payment terms captured at registration. Rendered by the portal + console registration
+  // wizards and the vendor profile, which build the key as `enum.paymentTerm.${value}` — so
+  // every PAYMENT_TERMS value must have an entry here.
+  "enum.paymentTerm.credit_30": { id: "Kredit 30 hari", en: "30-day credit" },
+  "enum.paymentTerm.credit_45": { id: "Kredit 45 hari", en: "45-day credit" },
+  "enum.paymentTerm.credit_60": { id: "Kredit 60 hari", en: "60-day credit" },
+  "enum.paymentTerm.cod": { id: "Bayar di tempat (COD)", en: "Cash on delivery (COD)" },
+  "enum.paymentTerm.agent": { id: "Melalui agen", en: "Through agent" },
+
   // Company scale per SIUP (drift-audit #4 P1).
   "enum.companyScale.kecil": { id: "Kecil", en: "Small" },
   "enum.companyScale.menengah": { id: "Menengah", en: "Medium" },
