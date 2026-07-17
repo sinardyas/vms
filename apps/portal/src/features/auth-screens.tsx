@@ -33,8 +33,12 @@ function Hero() {
   );
 }
 
-/** Shared form frame: brand, locale switch, and the panel the mode fills in. */
-function Frame({ children }: { children: React.ReactNode }) {
+/**
+ * Shared form frame: brand, locale switch, and the panel the mode fills in. Exported so the
+ * credential landing pages (M6.5d, `credential-screens.tsx`) wear the same chrome — someone arriving
+ * from an emailed link shouldn't be able to tell they entered by a different door.
+ */
+export function Frame({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background">
       <div className="flex flex-1 flex-col justify-center px-6 py-10 sm:px-12 lg:px-16">

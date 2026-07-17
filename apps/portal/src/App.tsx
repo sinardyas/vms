@@ -39,6 +39,7 @@ import {
 } from "@vms/ui";
 import { useEffect, useState } from "react";
 import { AuthScreens } from "./features/auth-screens";
+import { SetPassword, Verified } from "./features/credential-screens";
 import { Registration } from "./features/registration";
 import { loadCapabilities } from "./lib/api";
 import { signOut } from "./lib/auth";
@@ -191,10 +192,26 @@ function Portal() {
   );
 }
 
-/** Session gate: loading → spinner; no session → auth screens; signed in → the portal. */
+/**
+ * Session gate: loading → spinner; no session → auth screens; signed in → the portal.
+ *
+ * The credential landing pages (M6.5d, #92) are matched *before* the gate, because they are reached
+ * precisely when there is no session to gate on: an invited owner has an account but no password
+ * yet, so the gate would show them a sign-in form for a credential they've come here to create.
+ * Their outcome depends on the token in the URL, not on `/me`.
+ *
+ * Path matching rather than a router: the portal has no routes — sections are state (see `Portal`) —
+ * and these two pages are entered by URL and left by URL, so a `Router` would be all ceremony and no
+ * navigation. The static server and Vite both fall back to `index.html`, so the deep links resolve.
+ */
 function Root() {
   const t = useT();
   const { status, reload } = useCapabilities();
+  const { pathname, search } = window.location;
+  const params = new URLSearchParams(search);
+
+  if (pathname === "/set-password") return <SetPassword params={params} />;
+  if (pathname === "/verified") return <Verified params={params} />;
 
   if (status === "loading") {
     return (
