@@ -52,6 +52,7 @@ import { DocumentMaster } from "./features/document-master";
 import { DocumentVerification } from "./features/document-verification";
 import { OperationalLists } from "./features/operational-lists";
 import { RegistrationLists } from "./features/registration-lists";
+import { ResetPasswordScreen } from "./features/reset-password-screen";
 import { Vendors } from "./features/vendors";
 import { loadCapabilities } from "./lib/api";
 import { signOut } from "./lib/auth";
@@ -311,10 +312,20 @@ function Console() {
  *
  * "error" lands on the sign-in card alongside "anonymous": a `/me` that won't load means the console
  * can't know what this actor may do, and offering a signed-in shell it can't gate would be a lie.
+ *
+ * `/reset-password` (M6.5d, #92) is matched *before* the gate — a staff member following that link
+ * has no session by definition, and often no password yet at all, so the gate would offer them a
+ * sign-in form for a credential this page exists to create. Path matching rather than a router, for
+ * the same reason as the portal: the console's sections are state, and this page is entered and left
+ * by URL. Both the static server and Vite fall back to `index.html`, so the deep link resolves.
  */
 function Root() {
   const t = useT();
   const { status, reload } = useCapabilities();
+
+  if (window.location.pathname === "/reset-password") {
+    return <ResetPasswordScreen params={new URLSearchParams(window.location.search)} />;
+  }
 
   if (status === "loading") {
     return (

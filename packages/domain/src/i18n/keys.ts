@@ -804,6 +804,58 @@ export const catalogue = {
     en: "Password must be at least 8 characters.",
   },
 
+  // --- Portal credential landing pages (M6.5d, #92) — where the emailed links land ---------------
+  // `/set-password` — an office-invited owner (M6.2, #78) choosing their first password, and any
+  // vendor consuming a reset token. The invite wording is the default because the invite is the only
+  // way this page is reached today; `resetTitle`/`resetSubtitle` cover a plain reset link.
+  "portal.setPassword.inviteTitle": { id: "Atur kata sandi Anda", en: "Set your password" },
+  "portal.setPassword.inviteSubtitle": {
+    id: "Pendaftaran perusahaan Anda telah disetujui. Pilih kata sandi untuk masuk ke Portal Vendor.",
+    en: "Your company's registration has been approved. Choose a password to sign in to the Vendor Portal.",
+  },
+  "portal.setPassword.resetTitle": { id: "Pilih kata sandi baru", en: "Choose a new password" },
+  "portal.setPassword.resetSubtitle": {
+    id: "Masukkan kata sandi baru untuk akun Anda.",
+    en: "Enter a new password for your account.",
+  },
+  "portal.setPassword.newPassword": { id: "Kata sandi baru", en: "New password" },
+  "portal.setPassword.submit": { id: "Simpan dan masuk", en: "Save and sign in" },
+  // The token was rejected. Invalid / expired / already-used are one message on purpose: better-auth
+  // collapses all three into `INVALID_TOKEN` on this route, so naming one would be a guess.
+  "portal.setPassword.invalidTitle": { id: "Tautan tidak berlaku", en: "This link isn't valid" },
+  "portal.setPassword.invalidBody": {
+    id: "Tautan ini sudah kedaluwarsa atau telah digunakan. Hubungi tim pengadaan Soechi untuk meminta undangan baru.",
+    en: "This link has expired or has already been used. Contact the Soechi procurement team to request a new invitation.",
+  },
+  "portal.setPassword.failed": {
+    id: "Tidak dapat menyimpan kata sandi. Coba lagi.",
+    en: "Couldn't save the password. Please try again.",
+  },
+  // The password was saved but the automatic sign-in didn't take. The credential is good, so send
+  // them to the sign-in form rather than implying the save failed and inviting them to redo it.
+  "portal.setPassword.savedSignInFailed": {
+    id: "Kata sandi Anda tersimpan. Silakan masuk untuk melanjutkan.",
+    en: "Your password has been saved. Please sign in to continue.",
+  },
+
+  // `/verified` — where the sign-up verification link lands.
+  "portal.verified.title": { id: "Email Anda terverifikasi", en: "Your email is verified" },
+  "portal.verified.body": {
+    id: "Terima kasih. Anda sekarang dapat memulai pendaftaran vendor Anda.",
+    en: "Thank you. You can now start your vendor registration.",
+  },
+  "portal.verified.continue": { id: "Lanjutkan ke portal", en: "Continue to the portal" },
+  "portal.verified.expiredTitle": { id: "Tautan kedaluwarsa", en: "This link has expired" },
+  "portal.verified.expiredBody": {
+    id: "Tautan verifikasi berlaku selama 1 jam. Masuk untuk meminta tautan baru.",
+    en: "Verification links are valid for 1 hour. Sign in to request a new one.",
+  },
+  "portal.verified.invalidTitle": { id: "Tautan tidak berlaku", en: "This link isn't valid" },
+  "portal.verified.invalidBody": {
+    id: "Kami tidak dapat memverifikasi tautan ini. Coba masuk — email Anda mungkin sudah terverifikasi.",
+    en: "We couldn't verify this link. Try signing in — your email may already be verified.",
+  },
+
   "portal.reg.startTitle": { id: "Mulai pendaftaran vendor", en: "Start your vendor registration" },
   "portal.reg.startBody": {
     id: "Pilih asal perusahaan Anda untuk membuat draft. Anda dapat keluar dan melanjutkannya kapan saja.",
@@ -1013,6 +1065,43 @@ export const catalogue = {
     id: "Akses berbasis peran. Antrean dan izin Anda ditentukan oleh peran yang diberikan kepada Anda.",
     en: "Access is role-based. Your queues and permissions are determined by your assigned role.",
   },
+
+  // --- Console credential landing page (M6.5d, #92) — `/reset-password` ---------------------------
+  // Where an admin-initiated reset (M1.5, #24) lands. Also the *first* password for an internal user
+  // created by an admin: that flow stores no temporary secret, so the emailed link is the only way in.
+  "console.reset.title": { id: "Atur kata sandi Anda", en: "Set your password" },
+  "console.reset.subtitle": {
+    id: "Pilih kata sandi baru untuk akun staf Anda.",
+    en: "Choose a new password for your staff account.",
+  },
+  "console.reset.newPassword": { id: "Kata sandi baru", en: "New password" },
+  "console.reset.confirmPassword": { id: "Konfirmasi kata sandi", en: "Confirm password" },
+  "console.reset.submit": { id: "Simpan kata sandi", en: "Save password" },
+  "console.reset.invalidTitle": { id: "Tautan tidak berlaku", en: "This link isn't valid" },
+  "console.reset.invalidBody": {
+    id: "Tautan ini sudah kedaluwarsa atau telah digunakan. Minta administrator untuk mengirim tautan baru.",
+    en: "This link has expired or has already been used. Ask an administrator to send a new one.",
+  },
+  "console.reset.failed": {
+    id: "Tidak dapat menyimpan kata sandi. Coba lagi.",
+    en: "Couldn't save the password. Please try again.",
+  },
+  // The console's own copies rather than the portal's: same words today, but a `portal.*` key
+  // rendering on a staff screen is a lie the next edit would act on.
+  "console.reset.passwordMismatch": {
+    id: "Konfirmasi kata sandi tidak cocok.",
+    en: "Password confirmation doesn't match.",
+  },
+  "console.reset.passwordTooShort": {
+    id: "Kata sandi minimal 8 karakter.",
+    en: "Password must be at least 8 characters.",
+  },
+  "console.reset.successTitle": { id: "Kata sandi tersimpan", en: "Password saved" },
+  "console.reset.successBody": {
+    id: "Masuk dengan kata sandi baru Anda untuk melanjutkan.",
+    en: "Sign in with your new password to continue.",
+  },
+  "console.reset.backToSignIn": { id: "Ke halaman masuk", en: "Go to sign in" },
   // An in-scope Phase-0 screen that hasn't landed yet — distinct from the out-of-Phase-0 `soon` shell.
   "console.placeholder.body": {
     id: "Kerangka Fase-0. Layar ini hadir pada milestone berikutnya.",
