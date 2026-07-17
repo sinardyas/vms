@@ -80,6 +80,40 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@postgres:5432/${POSTGRES_DB:-vms}
     restart: "no"
 
+  # One-shot: load the UAT scenario — the accounts testers log in as, the eight-vendor roster, and
+  # the in-flight approvals that make every Phase-0 queue non-empty on first login (#88).
+  #
+  # It runs on the API image rather than beside the other seeds in `migrate`, because the scenario is
+  # domain data: it needs better-auth's password hasher, @vms/domain's activation-gate composition,
+  # and the MinIO storage seam — none of which the deliberately domain-free packages/db can reach.
+  # Hence also the wait on minio: this seed writes placeholder documents, not just rows.
+  seed-scenario:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      createbuckets:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgres://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@postgres:5432/${POSTGRES_DB:-vms}
+      # The scenario mints accounts that share one published password and vendors that don't exist.
+      # Under NODE_ENV=production the loader refuses without this flag — UAT (which the staging
+      # overlay pins to production) opts in explicitly; a real production deploy simply never does.
+      SEED_SCENARIO: ${SEED_SCENARIO:-1}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-vms-documents}
+    command: ["bun", "run", "src/seed-scenario.ts"]
+    restart: "no"
+
   # --- Applications --------------------------------------------------------------
   api:
     build:
@@ -89,6 +123,8 @@ services:
       postgres:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      seed-scenario:
         condition: service_completed_successfully
       minio:
         condition: service_healthy
