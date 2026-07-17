@@ -24,6 +24,7 @@ import {
   err,
   invariantError,
   isErr,
+  mayGrantRoles,
   notFoundError,
   parseWith,
   permissionKey,
@@ -85,11 +86,12 @@ export type AccessStore = {
   ) => Promise<
     { readonly ok: true; readonly value: UserDTO } | { readonly ok: false; readonly conflict: true }
   >;
+  /** `vendorGrant` = the patch would grant roles to a vendor-kind user (#96) — refused, nothing written. */
   readonly updateUser: (
     ctx: RequestContext,
     id: string,
     patch: UpdateUserInput,
-  ) => Promise<MutationResult<UserDTO> | null>;
+  ) => Promise<MutationResult<UserDTO> | { readonly ok: false; readonly vendorGrant: true } | null>;
   readonly resetPassword: (ctx: RequestContext, id: string) => Promise<{ email: string } | null>;
   readonly eligibility: () => Promise<CriticalHolders[]>;
 };
@@ -351,8 +353,18 @@ export const drizzleAccessStore = (db: DB = defaultDb): AccessStore => {
     },
 
     updateUser: async (ctx, id, patch) => {
-      const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1);
+      const [user] = await db
+        .select({ id: users.id, kind: users.kind })
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1);
       if (!user) return null;
+
+      // Roles are administered on internal users only (#96). Checked before the transaction opens, so
+      // a refused patch writes nothing at all — not the role rows, not the name/active fields riding
+      // with them. Only role-bearing patches are refused: renaming or deactivating a vendor user is
+      // ordinary admin work and stays open.
+      if (patch.roleIds && !mayGrantRoles(user)) return { ok: false, vendorGrant: true };
 
       return guarded(
         patch.confirm ?? false,
@@ -492,6 +504,8 @@ export const accessRoutes = (store: AccessStore = drizzleAccessStore()) => {
     const result = await store.updateUser(c.var.ctx, c.req.param("id"), body.value);
     if (result === null)
       return sendError(c, notFoundError({ messageKey: "access.error.notFound" }));
+    if ("vendorGrant" in result)
+      return sendError(c, invariantError({ messageKey: "access.error.vendorRoleGrant" }));
     if (!result.ok) return deadlock(c, result.deadlock);
     return c.json({ user: result.value });
   });
