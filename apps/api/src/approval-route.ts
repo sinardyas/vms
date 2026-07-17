@@ -14,7 +14,10 @@
  * resolution *means*. A **registration** final-approve activates the vendor (reject → Draft); a
  * post-activation **edit** (M4.5 — bank/non-bank change) instead **applies its diff** to the still-Active
  * vendor (reject → **discards** it), then clears `change_pending` — the `apply_change`/`discard_change`
- * effects, landed by {@link applyVendorChange}/{@link discardVendorChange} in this same decide tx.
+ * effects, landed by {@link applyVendorChange}/{@link discardVendorChange} in this same decide tx. A
+ * **reactivation** (M6.4, #80) rides the registration path on approve — same `activate` effect, same M5.2
+ * gate — but rejects to `keep_inactive`, leaving the vendor Inactive rather than recasting an established
+ * record as an unfinished Draft.
  *
  * **Separation of duties + escalation (M4.3, #58, ADR-0009/0014):** an **approve** is layered on top of
  * the RBAC `approvals:approve` gate with the M1.6 eligibility primitive ({@link approverIneligibility}) —
@@ -65,6 +68,7 @@ import {
   hasEligibleApprover,
   hasOverrideAuthority,
   isEditTrigger,
+  isReactivationTrigger,
   notFoundError,
   parseWith,
   toPermissionSet,
@@ -617,9 +621,12 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         let officeInviteEmail: string | null = null;
         if (outcome.subjectEffect === "activate") {
           // The M5.2 gate above already cleared this activation (all mandatory docs Verified).
+          // `inactiveReason` is cleared unconditionally, not just for a reactivation: it describes why a
+          // vendor is *currently* out of service, so anything in service must carry none. A first
+          // activation has none to clear, which makes this a no-op there rather than a special case.
           await tx
             .update(vendors)
-            .set({ status: "active", updatedAt: now })
+            .set({ status: "active", inactiveReason: null, updatedAt: now })
             .where(eq(vendors.id, row.subjectVendorId));
           // An office-registered vendor has no user (M3.6 links no owner) — activation is the moment
           // it earns one, so mint the account here, in the same tx: a vendor must never be able to
@@ -648,6 +655,9 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
             .update(vendors)
             .set({ status: "draft", updatedAt: now })
             .where(eq(vendors.id, row.subjectVendorId));
+        } else if (outcome.subjectEffect === "keep_inactive") {
+          // A declined reactivation (M6.4) writes nothing: the vendor was Inactive and stays Inactive.
+          // The refusal + its reason live on the resolved request's step, which is the record of the act.
         } else if (outcome.subjectEffect === "apply_change") {
           await applyVendorChange(tx, ctx, row.subjectVendorId, row.payload);
         } else if (outcome.subjectEffect === "discard_change") {
@@ -677,8 +687,10 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
           });
         }
         if (outcome.subjectEffect === "activate") {
+          // Both land the vendor Active, but they are different acts on the record — a first activation
+          // vs a return to service — and the audit is the only place that distinction survives.
           await writeAudit(tx, ctx, {
-            action: "vendor.activated",
+            action: isReactivationTrigger(row.trigger) ? "vendor.reactivated" : "vendor.activated",
             module: "vendors",
             subjectType: "vendor",
             subjectId: row.subjectVendorId,
@@ -686,6 +698,15 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
         } else if (outcome.subjectEffect === "return_to_draft") {
           await writeAudit(tx, ctx, {
             action: "vendor.returned_to_draft",
+            module: "vendors",
+            subjectType: "vendor",
+            subjectId: row.subjectVendorId,
+          });
+        } else if (outcome.subjectEffect === "keep_inactive") {
+          // Nothing changed on the vendor, so without this row the refusal would be visible only on the
+          // approval request — the vendor's own trail would show a reactivation raised and never answered.
+          await writeAudit(tx, ctx, {
+            action: "vendor.reactivation_rejected",
             module: "vendors",
             subjectType: "vendor",
             subjectId: row.subjectVendorId,
@@ -701,8 +722,16 @@ export const drizzleApprovalStore = (dbHandle: DB = defaultDb): ApprovalStore =>
             // Only a **registration** resolution is the vendor's news. An edit (M4.5) is staff
             // re-approving a change on a record that stays Active throughout — the vendor's own
             // lifecycle didn't move, and the catalogue scopes `decision` to registrations.
+            //
+            // A **reactivation** (M6.4) is excluded for the second reason but not the first: the vendor's
+            // lifecycle very much moved, yet `decision` renders "Registration approved/rejected" over a
+            // CTA to "Resume registration" (`notify.decision.*`). Sent to a dormant vendor who submitted
+            // nothing, that copy is wrong on both counts and would point them at a flow they can't walk.
+            // Silence beats a misleading notice; a reactivation-shaped event is left to M6.5.
             decision:
-              isEditTrigger(row.trigger) || outcome.requestStatus === "pending"
+              isEditTrigger(row.trigger) ||
+              isReactivationTrigger(row.trigger) ||
+              outcome.requestStatus === "pending"
                 ? null
                 : { outcome: outcome.requestStatus },
             nextAssignment,

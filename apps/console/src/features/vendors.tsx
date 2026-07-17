@@ -13,6 +13,7 @@
  */
 
 import {
+  ArrowCounterClockwise,
   ArrowLeft,
   Bank,
   ClockCounterClockwise,
@@ -21,6 +22,7 @@ import {
   MagnifyingGlass,
   PencilSimple,
   Plus,
+  Prohibit,
   Warning,
 } from "@phosphor-icons/react";
 import {
@@ -468,8 +470,12 @@ function VendorProfile({ vendorId, onBack }: { vendorId: string; onBack: () => v
   const [error, setError] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [changeKind, setChangeKind] = useState<ChangeKind | null>(null);
+  const [lifecycle, setLifecycle] = useState<LifecycleAction>(null);
   const canAudit = can("audit", "view");
   const canEdit = can("vendors", "edit");
+  // Deactivate is the module's soft-delete verb (M6.4) — among the seeded roles only the sysadmin holds
+  // it, so this button is absent for the whole AP chain, matching what the route would refuse.
+  const canDeactivateVendor = can("vendors", "delete");
 
   const reload = useCallback(() => {
     let alive = true;
@@ -557,6 +563,36 @@ function VendorProfile({ vendorId, onBack }: { vendorId: string; onBack: () => v
               {t("console.vendorProfile.requestChange")}
             </Button>
           )}
+          {/* Deactivate (M6.4) — an Active vendor only, and only for `vendors:delete`. Hidden while a
+              change is in flight: the route refuses it (an open request is a decision about a vendor in
+              service), so offering it would be offering a 409. */}
+          {vendor.status === "active" &&
+            canDeactivateVendor &&
+            !vendor.changePending &&
+            !changeKind && (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="shrink-0"
+                onClick={() => setLifecycle("deactivate")}
+              >
+                <Prohibit weight="bold" />
+                {t("console.vendorProfile.deactivate")}
+              </Button>
+            )}
+          {/* Raise a reactivation (M6.4) — an Inactive vendor, `vendors:edit` (the AP chain). Hidden once
+              one is awaiting the AP Manager; the banner below says so instead. */}
+          {vendor.status === "inactive" && canEdit && !vendor.reactivationPending && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="shrink-0"
+              onClick={() => setLifecycle("reactivate")}
+            >
+              <ArrowCounterClockwise weight="bold" />
+              {t("console.vendorProfile.reactivate")}
+            </Button>
+          )}
         </CardContent>
       </Card>
 
@@ -574,6 +610,41 @@ function VendorProfile({ vendorId, onBack }: { vendorId: string; onBack: () => v
         <>
           {vendor.changePending && (
             <PendingChangeBanner vendorId={vendorId} canEdit={canEdit} onCancelled={reload} />
+          )}
+
+          {/* Out of service (M6.4). The reason is the point of the banner: "Inactive" alone leaves staff
+              guessing whether the vendor lapsed, concluded, or was pulled — and that question is what
+              the reactivation decision turns on. */}
+          {vendor.status === "inactive" && (
+            <Card className="border-muted-foreground/30 bg-muted/40">
+              <CardContent className="space-y-0.5 py-4">
+                <div className="flex items-center gap-2">
+                  <Prohibit weight="fill" className="text-muted-foreground" />
+                  <span className="font-semibold">
+                    {t(
+                      vendor.reactivationPending
+                        ? "console.vendorProfile.reactivationPending"
+                        : "console.vendorProfile.inactiveBanner",
+                    )}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    vendor.reactivationPending
+                      ? "console.vendorProfile.reactivationPendingBody"
+                      : "console.vendorProfile.inactiveBannerBody",
+                  )}
+                </p>
+                {vendor.inactiveReason && (
+                  <p className="pt-1 text-xs text-foreground">
+                    <span className="text-muted-foreground">
+                      {t("console.vendorProfile.deactivateReason")}:{" "}
+                    </span>
+                    {vendor.inactiveReason}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
           )}
 
           <Tabs defaultValue="details">
@@ -625,7 +696,127 @@ function VendorProfile({ vendorId, onBack }: { vendorId: string; onBack: () => v
           }}
         />
       )}
+
+      {lifecycle && (
+        <LifecycleDialog
+          vendorId={vendorId}
+          action={lifecycle}
+          onClose={() => setLifecycle(null)}
+          onDone={() => {
+            setLifecycle(null);
+            reload();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/* ── Service lifecycle: deactivate / raise reactivation (M6.4, #80) ───────────────────────────── */
+
+/** Which lifecycle act the dialog is confirming, or `null` when it's closed. */
+type LifecycleAction = "deactivate" | "reactivate" | null;
+
+/**
+ * Confirmation for the Inactive↔Active pair (M6.4, ADR-0009). Both directions are consequential enough
+ * to deserve a stop-and-read rather than a bare button, but they ask for different things, and one
+ * dialog carries both because they're the same act seen from either end:
+ *   - **deactivate** takes a mandatory **reason** (the record has to say why a vendor left service, and
+ *     the API refuses without one — the Confirm button mirrors that rather than discovering it via 422);
+ *   - **reactivate** takes nothing: it *raises* a request, so there's nothing to capture, only the
+ *     consequences to state — AP Manager approval, the M5.2 document gate, and the fact that the vendor
+ *     stays Inactive until both clear. Staff who expect a button to flip the status need to be told it
+ *     doesn't before they press it, not after.
+ */
+function LifecycleDialog({
+  vendorId,
+  action,
+  onClose,
+  onDone,
+}: {
+  vendorId: string;
+  action: Exclude<LifecycleAction, null>;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const t = useT();
+  const { locale } = useLocale();
+  const { toast } = useToast();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const deactivating = action === "deactivate";
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      if (deactivating) {
+        await vendorApi.deactivate(locale, vendorId, reason);
+        toast({ title: t("console.vendorProfile.deactivated"), tone: "success" });
+      } else {
+        await vendorApi.reactivate(locale, vendorId);
+        toast({ title: t("console.vendorProfile.reactivateSubmitted"), tone: "success" });
+      }
+      onDone();
+    } catch (e) {
+      // The server's localized refusal (409 not-Active / in-flight request, 403) is more specific than
+      // anything we could say here, so prefer it and keep the generic copy for a transport failure.
+      const fallback = deactivating
+        ? "console.vendorProfile.deactivateError"
+        : "console.vendorProfile.reactivateError";
+      const msg = e instanceof VendorApiError ? e.message : t(fallback);
+      toast({ title: msg, tone: "danger" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t(
+              deactivating
+                ? "console.vendorProfile.deactivateTitle"
+                : "console.vendorProfile.reactivateTitle",
+            )}
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          {t(
+            deactivating
+              ? "console.vendorProfile.deactivateIntro"
+              : "console.vendorProfile.reactivateIntro",
+          )}
+        </p>
+        {deactivating && (
+          <Field
+            label={t("console.vendorProfile.deactivateReason")}
+            helper={t("console.vendorProfile.deactivateReasonHint")}
+            required
+          >
+            {(p) => <Input {...p} value={reason} onChange={(e) => setReason(e.target.value)} />}
+          </Field>
+        )}
+        <DialogFooter>
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
+            {t("portal.common.cancel")}
+          </Button>
+          <Button
+            // Empty-reason disable mirrors the API's 422 rather than letting staff discover it. `trim`
+            // matches the server's own check, so whitespace isn't a way past either bar.
+            disabled={busy || (deactivating && reason.trim() === "")}
+            onClick={() => void submit()}
+          >
+            {t(
+              deactivating
+                ? "console.vendorProfile.deactivateConfirm"
+                : "console.vendorProfile.reactivateConfirm",
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

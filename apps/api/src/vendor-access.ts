@@ -68,3 +68,23 @@ export const requireVendorOwnership =
     if (await store.isMember(vendorId, actor.userId)) return next();
     return sendError(c, forbiddenError({ messageKey: "error.vendor.notOwner" }));
   };
+
+/**
+ * Middleware: refuse a **vendor-kind** actor outright — for staff-only acts on a vendor that no vendor
+ * may perform on *any* record, their own included (M6.4: deactivate / raise a reactivation).
+ *
+ * This is the complement of {@link requireVendorOwnership}, not a stricter version of it. Ownership asks
+ * *"is this your record?"* and so scopes an act a vendor is entitled to; this asks *"are you staff?"*,
+ * because for these acts owning the record is precisely the wrong warrant — a vendor taking itself out of
+ * service, or voting itself back in, is the act we mean to forbid. RBAC alone can't carry it: `vendors`
+ * grants are held by both audiences (a vendor holds `vendors:delete` for Draft self-correction, #21), so
+ * the permission is real and the *kind* is what disqualifies.
+ *
+ * A `null` actor falls through to `requirePermission`'s 401, so the permission check keeps owning that
+ * signal (same contract as the ownership guard).
+ */
+export const requireInternalActor = (): MiddlewareHandler<AppEnv> => async (c, next) => {
+  const { actor } = c.var.ctx;
+  if (!actor || actor.kind === "internal") return next();
+  return sendError(c, forbiddenError({ messageKey: "error.vendor.internalOnly" }));
+};
