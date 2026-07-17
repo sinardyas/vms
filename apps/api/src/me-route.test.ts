@@ -8,10 +8,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type Actor, toPermissionSet } from "@vms/domain";
+import { type Actor, type SessionRole, toPermissionSet } from "@vms/domain";
 import { Hono } from "hono";
 import { type AppEnv, requestContext } from "./context";
-import { meRoutes } from "./me-route";
+import { type RoleLoader, meRoutes } from "./me-route";
 
 const staff = (permissions: Actor["permissions"]): Actor => ({
   userId: "user-1",
@@ -21,11 +21,13 @@ const staff = (permissions: Actor["permissions"]): Actor => ({
   permissions,
 });
 
+const AP_MANAGER: SessionRole = { code: "ap_manager", nameId: "Manajer AP", nameEn: "AP Manager" };
+
 /** Mount the route under a parent running the context middleware — the real wiring. */
-const appWith = (resolveActor: () => Actor | null) => {
+const appWith = (resolveActor: () => Actor | null, loadRoles: RoleLoader = async () => []) => {
   const app = new Hono<AppEnv>();
   app.use("*", requestContext(resolveActor));
-  app.route("/", meRoutes());
+  app.route("/", meRoutes(loadRoles));
   return app;
 };
 
@@ -38,7 +40,7 @@ describe("GET /me", () => {
 
   test("returns identity but never the raw permission set", async () => {
     const actor = () => staff(toPermissionSet([{ module: "audit", verb: "view" }]));
-    const res = await appWith(actor).request("/me");
+    const res = await appWith(actor, async () => [AP_MANAGER]).request("/me");
 
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -47,8 +49,30 @@ describe("GET /me", () => {
       kind: "internal",
       email: "staff@soechi.id",
       name: "Staff",
+      roles: [AP_MANAGER],
     });
     expect(body.actor.permissions).toBeUndefined();
+  });
+
+  // M6.5 (#90): the console header names the signed-in actor and their role, so the shell stops
+  // showing a hardcoded persona. The roles ride on the identity — display only, never a grant list.
+  test("carries the actor's roles, loaded for the acting user", async () => {
+    let asked: string | null = null;
+    const loadRoles: RoleLoader = async (userId) => {
+      asked = userId;
+      return [AP_MANAGER];
+    };
+    const res = await appWith(() => staff(toPermissionSet([])), loadRoles).request("/me");
+
+    expect(asked).toBe("user-1");
+    const { actor } = await res.json();
+    // Bilingual, from the `roles` table — so a runtime-added role names itself in both locales.
+    expect(actor.roles).toEqual([AP_MANAGER]);
+  });
+
+  test("a role-less actor gets an empty list, not a missing field", async () => {
+    const res = await appWith(() => staff(toPermissionSet([]))).request("/me");
+    expect((await res.json()).actor.roles).toEqual([]);
   });
 
   test("capability grid mirrors the actor's grants — true only where granted, false everywhere else", async () => {

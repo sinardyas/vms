@@ -215,7 +215,7 @@ function DocumentDialog({
               <Input
                 {...p}
                 value={form.type}
-                placeholder="Legal · Tax · HSE · Finance · Category · Bank…"
+                placeholder={t("docMaster.f.typePlaceholder")}
                 onChange={(e) => set("type", e.target.value)}
               />
             )}
@@ -252,7 +252,7 @@ function DocumentDialog({
               <Input
                 {...p}
                 value={form.reminder}
-                placeholder="Off · 2 weeks · 1 month"
+                placeholder={t("docMaster.f.reminderPlaceholder")}
                 onChange={(e) => set("reminder", e.target.value)}
               />
             )}
@@ -385,8 +385,12 @@ function DocumentsTab({ onDocsChanged }: { onDocsChanged: () => void }) {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {bilingualName(row, locale)}
-                        {row.mandatory && (
+                        {/* Both cases carry a badge (#90): mandatory-only meant "optional" read as
+                            an absence, which is indistinguishable from a rendering bug. */}
+                        {row.mandatory ? (
                           <Badge tone="warning">{t("docMaster.badge.mandatory")}</Badge>
+                        ) : (
+                          <Badge tone="neutral">{t("docMaster.badge.optional")}</Badge>
                         )}
                       </div>
                     </TableCell>
