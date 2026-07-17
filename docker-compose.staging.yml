@@ -40,6 +40,25 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}
 
+  # The UAT scenario (#88) — fictional vendors and accounts sharing one published password. Wanted in
+  # UAT, never in a real production database. This overlay serves both, so the choice is REQUIRED
+  # rather than defaulted: `SEED_SCENARIO=1` for a UAT bring-up, `0` for production. Defaulting it
+  # either way is how you end up with a surprise — see #97, where a convenience default hid a missing
+  # auth surface for six milestones because nobody ever ran the path production takes.
+  seed-scenario:
+    image: ${IMAGE_PREFIX:-vms}/api:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}
+      SEED_SCENARIO: ${SEED_SCENARIO:?set SEED_SCENARIO=1 to load the UAT scenario, or 0 for a production database}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?set MINIO_ENDPOINT}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+      MINIO_BUCKET: ${MINIO_BUCKET:-vms-documents}
+
   api:
     image: ${IMAGE_PREFIX:-vms}/api:${IMAGE_TAG:-latest}
     restart: always
