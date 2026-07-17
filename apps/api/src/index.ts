@@ -16,6 +16,7 @@ import { env } from "./env";
 import { meRoutes } from "./me-route";
 import { notificationRoutes } from "./notifications-route";
 import { operationalListRoutes } from "./operational-lists-route";
+import { loadSessionRoles } from "./permissions";
 import { registrationListRoutes } from "./registration-lists-route";
 import { sessionActorResolver } from "./session-actor";
 import { requireInternalActor, requireVendorOwnership } from "./vendor-access";
@@ -61,8 +62,12 @@ app.get("/health/db", async (c) => {
 
 // M1.3 (#22): the session's identity + capability grid — the server-authored mirror the UI reads to
 // show/hide affordances. Computed from the same permission set the RBAC guard evaluates, so a hidden
-// button is a refused request. 401 for an anonymous caller (deny-by-default).
-app.route("/", meRoutes());
+// button is a refused request. 401 for an anonymous caller (deny-by-default). It also names the
+// signed-in actor and their roles, so each shell's header can show who is really acting (M6.5, #90).
+app.route(
+  "/",
+  meRoutes((userId) => loadSessionRoles(db, userId)),
+);
 
 // M6.3 (#79, ADR-0016): the notification centre both bells read — self-scoped to the session's own
 // rows, so like `meRoutes` it is authenticated-only rather than gated on an RBAC module, and mounted
