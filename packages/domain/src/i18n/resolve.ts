@@ -34,6 +34,10 @@ const interpolate = (template: string, params?: MessageParams): string => {
 /**
  * Resolve a message key to text in `locale`, falling back to the default locale and then to
  * the key itself (so a missing translation degrades visibly rather than crashing).
+ *
+ * The unknown-key guard is load-bearing, not defensive padding: callers that build a key
+ * dynamically (`t(`enum.origin.${value}` as MessageKey)`) cast past the `MessageKey` union,
+ * so an absent entry reaches here at runtime having never failed a compile.
  */
 export const translate = (
   key: MessageKey,
@@ -41,6 +45,7 @@ export const translate = (
   params?: MessageParams,
 ): string => {
   const entry = catalogue[key];
+  if (!entry) return key;
   const template = entry[locale] ?? entry[DEFAULT_LOCALE] ?? key;
   return interpolate(template, params);
 };
