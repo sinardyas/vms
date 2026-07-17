@@ -11,10 +11,25 @@ import {
 } from "./templates";
 
 // A valid input per event, reused across the template/render suites below.
-const decision = (outcome: "approved" | "rejected", reason?: string): NotificationInput => ({
+const decision = (
+  outcome: "approved" | "rejected",
+  reason?: string,
+  kind: "registration" | "reactivation" = "registration",
+): NotificationInput => ({
   event: "decision",
-  params: { name: "Budi", url: "https://portal.test/x", vendorName: "PT Samudra", outcome, reason },
+  params: {
+    name: "Budi",
+    url: "https://portal.test/x",
+    vendorName: "PT Samudra",
+    outcome,
+    kind,
+    reason,
+  },
 });
+
+/** The M6.4 reactivation register of the same event (M6.5e). */
+const reactivation = (outcome: "approved" | "rejected", reason?: string): NotificationInput =>
+  decision(outcome, reason, "reactivation");
 
 const docRejected = (returnedToDraft: boolean): NotificationInput => ({
   event: "doc_rejected",
@@ -32,6 +47,8 @@ const ALL_INPUTS: readonly NotificationInput[] = [
   { event: "email_verify", params: { name: "Budi", url: "https://portal.test/v" } },
   decision("approved"),
   decision("rejected", "NPWP tidak sesuai"),
+  reactivation("approved"),
+  reactivation("rejected", "SIUP kedaluwarsa"),
   docRejected(true),
   docRejected(false),
   {
@@ -132,6 +149,47 @@ describe("template resolution", () => {
     expect(resolveTemplate(decision("approved")).subjectKey).not.toBe(
       resolveTemplate(decision("rejected", "x")).subjectKey,
     );
+  });
+
+  test("all four decision registers are distinct copy (M6.5e)", () => {
+    // 2×2 — the kind must select copy just as firmly as the outcome does. Sharing a template across
+    // kinds is exactly what M6.4 refused to do, and the reason it sent nothing at all.
+    const keys = [
+      decision("approved"),
+      decision("rejected", "x"),
+      reactivation("approved"),
+      reactivation("rejected", "x"),
+    ].map((i) => resolveTemplate(i).subjectKey);
+    expect(new Set(keys).size).toBe(4);
+  });
+
+  test("a declined reactivation never claims a return to Draft, nor offers to resume (M6.4/M6.5e)", () => {
+    // The bug M6.4 suppressed this notice to avoid, now asserted rather than avoided: a dormant
+    // vendor was never in Draft to be returned to, and reactivation is staff-only — so copy that
+    // says either would be false and unwalkable. This is the whole reason `kind` exists.
+    for (const locale of LOCALES) {
+      const rendered = renderNotification(reactivation("rejected", "SIUP kedaluwarsa"), locale);
+      const registration = renderNotification(decision("rejected", "SIUP kedaluwarsa"), locale);
+      for (const text of [rendered.subject, rendered.title, rendered.body, rendered.cta]) {
+        expect(text.toLowerCase()).not.toContain("draft");
+      }
+      expect(rendered.cta).not.toBe(registration.cta);
+      // …and it must say what *is* true: the vendor stays out of service.
+      expect(rendered.body.toLowerCase()).toContain(
+        locale === "id" ? "nonaktif" : "remains inactive",
+      );
+    }
+  });
+
+  test("an approved reactivation reads as a return to service, not a first approval (M6.5e)", () => {
+    for (const locale of LOCALES) {
+      const rendered = renderNotification(reactivation("approved"), locale);
+      const registration = renderNotification(decision("approved"), locale);
+      expect(rendered.subject).not.toBe(registration.subject);
+      expect(rendered.body.toLowerCase()).toContain(
+        locale === "id" ? "reaktivasi" : "reactivation",
+      );
+    }
   });
 
   test("a mandatory doc rejection resolves to different copy than an optional one (M5.3)", () => {
