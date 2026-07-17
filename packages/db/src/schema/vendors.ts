@@ -65,6 +65,13 @@ export const vendors = pgTable(
     // one pending change at a time on an Active vendor (ADR-0010)
     changePending: boolean().notNull().default(false),
 
+    // Why this vendor was taken out of service (M6.4, ADR-0009). Set on deactivate, cleared when a
+    // reactivation lands the vendor Active again, so it always describes the *current* dormancy and is
+    // null for any vendor in service. It lives here rather than on the audit row because the audit log
+    // is an action log with no field payloads (ADR-0011), and the console has to render this reason
+    // beside the Inactive status — a fact about the vendor's present state, not a record of a past act.
+    inactiveReason: text(),
+
     ...timestamps,
   },
   (t) => [

@@ -120,6 +120,14 @@ export type VendorDTO = {
   readonly paymentTerm: PaymentTerm | null;
   readonly signedTermsFileId: string | null;
   readonly changePending: boolean;
+  /** Why this vendor is out of service (M6.4). Null whenever it is in service — see the schema note. */
+  readonly inactiveReason: string | null;
+  /**
+   * Is a reactivation already awaiting the AP Manager (M6.4)? Not derivable from `changePending`, which
+   * is the M4.5 *edit* lock on an Active record — an Inactive vendor's open request sets no flag. The
+   * console needs it to keep "Request reactivation" from being a button whose only outcome is a 409.
+   */
+  readonly reactivationPending: boolean;
 };
 
 /**
@@ -253,7 +261,12 @@ export type VendorStore = {
 
 /* ── The real Drizzle store ─────────────────────────────────────────────────────────────────────── */
 
-const toDTO = (row: typeof vendors.$inferSelect): VendorDTO => ({
+/**
+ * `reactivationPending` is passed in rather than read off the row: it's a fact about the vendor's open
+ * approval request, not a vendor column, so only a caller that looked it up can answer it. Callers that
+ * are creating a vendor pass `false` — a brand-new Draft has no requests at all.
+ */
+const toDTO = (row: typeof vendors.$inferSelect, reactivationPending: boolean): VendorDTO => ({
   id: row.id,
   origin: row.origin,
   status: row.status,
@@ -285,7 +298,25 @@ const toDTO = (row: typeof vendors.$inferSelect): VendorDTO => ({
   paymentTerm: row.paymentTerm,
   signedTermsFileId: row.signedTermsFileId,
   changePending: row.changePending,
+  inactiveReason: row.inactiveReason,
+  reactivationPending,
 });
+
+/** Does `vendorId` have a reactivation awaiting decision? (M6.4 — one open request per vendor, ADR-0010.) */
+const hasPendingReactivation = async (handle: DB, vendorId: string): Promise<boolean> => {
+  const [row] = await handle
+    .select({ id: approvalRequests.id })
+    .from(approvalRequests)
+    .where(
+      and(
+        eq(approvalRequests.subjectVendorId, vendorId),
+        eq(approvalRequests.status, "pending"),
+        eq(approvalRequests.trigger, "reactivation"),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+};
 
 /**
  * The Draft columns a screen fills in (null out anything the payload omits — a lenient partial save).
@@ -354,12 +385,14 @@ export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
         subjectType: "vendor",
         subjectId: row.id,
       });
-      return toDTO(row);
+      // A vendor that was created moments ago inside this tx can carry no approval request yet.
+      return toDTO(row, false);
     }),
 
   getById: async (vendorId) => {
     const [row] = await dbHandle.select().from(vendors).where(eq(vendors.id, vendorId)).limit(1);
-    return row ? toDTO(row) : null;
+    if (!row) return null;
+    return toDTO(row, await hasPendingReactivation(dbHandle, vendorId));
   },
 
   list: async () => {
@@ -394,7 +427,9 @@ export const drizzleVendorStore = (dbHandle: DB = defaultDb): VendorStore => ({
         subjectType: "vendor",
         subjectId: vendorId,
       });
-      return toDTO(row);
+      // Capture is Draft-only (M4.4's freeze), and a Draft has never been in service — so there is no
+      // reactivation to be pending. An Inactive vendor can't reach this path at all.
+      return toDTO(row, false);
     }),
 
   submissionParts: async (vendor) => {
