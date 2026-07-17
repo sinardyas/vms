@@ -196,6 +196,49 @@ describe("users", () => {
     expect((await res.json()).error.messageKey).toBe("access.error.emailTaken");
   });
 
+  test("PATCH granting roles to a vendor-kind user is a 422 (#96)", async () => {
+    const store = fakeStore({ updateUser: async () => ({ ok: false, vendorGrant: true }) });
+    const res = await appWith(() => staff(["edit"]), store).request(
+      `/console/access/users/${aUser.id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ roleIds: [aRole.id] }),
+      },
+    );
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.messageKey).toBe("access.error.vendorRoleGrant");
+  });
+
+  test("PATCH clearing a vendor-kind user's roles is refused too (#96)", async () => {
+    const store = fakeStore({ updateUser: async () => ({ ok: false, vendorGrant: true }) });
+    const res = await appWith(() => staff(["edit"]), store).request(
+      `/console/access/users/${aUser.id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ roleIds: [] }),
+      },
+    );
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.messageKey).toBe("access.error.vendorRoleGrant");
+  });
+
+  test("PATCH granting roles to an internal user is unaffected", async () => {
+    const granted: UserDTO = { ...aUser, roles: [aRole] };
+    const store = fakeStore({ updateUser: async () => ({ ok: true, value: granted }) });
+    const res = await appWith(() => staff(["edit"]), store).request(
+      `/console/access/users/${aUser.id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ roleIds: [aRole.id] }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).user.roles).toHaveLength(1);
+  });
+
   test("reset-password needs access:edit and returns the target email", async () => {
     const res = await appWith(() => staff(["edit"])).request(
       `/console/access/users/${aUser.id}/reset-password`,
