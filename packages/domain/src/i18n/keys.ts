@@ -668,6 +668,35 @@ export const catalogue = {
     en: "Can't activate yet — only {verified} of {required} mandatory documents are verified.",
   },
 
+  // --- Vendor lifecycle: Inactive↔Active (M6.4, #80, ADR-0009) ---
+  // A staff-only act was attempted by a vendor-kind actor. Deliberately not "you don't own this" —
+  // owning it is exactly what doesn't help here (see `requireInternalActor`).
+  "error.vendor.internalOnly": {
+    id: "Tindakan ini hanya dapat dilakukan oleh staf Soechi.",
+    en: "This action can only be performed by Soechi staff.",
+  },
+  // Deactivate was attempted on a vendor that isn't Active — nothing to take out of service.
+  "error.vendor.notDeactivatable": {
+    id: "Hanya vendor aktif yang dapat dinonaktifkan.",
+    en: "Only an active vendor can be deactivated.",
+  },
+  // Reactivation was raised for a vendor that isn't Inactive.
+  "error.vendor.notReactivatable": {
+    id: "Hanya vendor nonaktif yang dapat diajukan reaktivasi.",
+    en: "Only an inactive vendor can be raised for reactivation.",
+  },
+  // Deactivating would strand the vendor's in-flight approval request (ADR-0010's one-pending lock):
+  // the request would go on being worked against a vendor that is no longer in service.
+  "error.vendor.deactivateChangePending": {
+    id: "Selesaikan dulu permintaan persetujuan yang sedang berjalan sebelum menonaktifkan vendor ini.",
+    en: "Resolve the approval request already in flight before deactivating this vendor.",
+  },
+  // A reason is mandatory on deactivation — the record must say why a vendor left service.
+  "error.vendor.deactivateReasonRequired": {
+    id: "Alasan wajib diisi saat menonaktifkan vendor.",
+    en: "A reason is required when deactivating a vendor.",
+  },
+
   // --- Post-activation edits (M4.5, #60, ADR-0005/0009) ---
   // A change request was raised on a vendor that isn't Active — only an Active vendor's edits re-approve
   // (a Draft edits in place; a Pending vendor is frozen under its registration review).
@@ -1170,6 +1199,65 @@ export const catalogue = {
   "console.vendorProfile.changeSubmitted": {
     id: "Permintaan perubahan diajukan untuk persetujuan.",
     en: "Change request submitted for approval.",
+  },
+
+  // --- Vendor profile: Inactive↔Active lifecycle (M6.4, #80, ADR-0009) ---
+  "console.vendorProfile.deactivate": { id: "Nonaktifkan vendor", en: "Deactivate vendor" },
+  "console.vendorProfile.deactivateTitle": {
+    id: "Nonaktifkan vendor ini?",
+    en: "Deactivate this vendor?",
+  },
+  "console.vendorProfile.deactivateIntro": {
+    id: "Vendor akan berhenti beroperasi dan tidak lagi muncul untuk transaksi baru. Rekamannya tetap tersimpan utuh, dan reaktivasi dapat diajukan kapan saja dengan persetujuan Manajer AP.",
+    en: "The vendor stops being in service and will no longer appear for new transactions. Its record is kept intact, and a reactivation can be raised at any time with AP Manager approval.",
+  },
+  "console.vendorProfile.deactivateReason": { id: "Alasan", en: "Reason" },
+  "console.vendorProfile.deactivateReasonHint": {
+    id: "Tercatat pada jejak audit vendor.",
+    en: "Recorded on the vendor's audit trail.",
+  },
+  "console.vendorProfile.deactivateConfirm": { id: "Nonaktifkan", en: "Deactivate" },
+  "console.vendorProfile.deactivated": {
+    id: "Vendor dinonaktifkan.",
+    en: "Vendor deactivated.",
+  },
+  "console.vendorProfile.deactivateError": {
+    id: "Gagal menonaktifkan vendor.",
+    en: "Failed to deactivate the vendor.",
+  },
+  "console.vendorProfile.reactivate": { id: "Ajukan reaktivasi", en: "Request reactivation" },
+  "console.vendorProfile.reactivateTitle": {
+    id: "Ajukan reaktivasi vendor?",
+    en: "Request this vendor's reactivation?",
+  },
+  "console.vendorProfile.reactivateIntro": {
+    id: "Reaktivasi memerlukan persetujuan Manajer AP, dan seluruh dokumen wajib harus terverifikasi sebelum vendor kembali aktif. Vendor tetap nonaktif hingga saat itu.",
+    en: "Reactivation needs AP Manager approval, and every mandatory document must be verified before the vendor goes live again. The vendor stays inactive until then.",
+  },
+  "console.vendorProfile.reactivateConfirm": { id: "Ajukan reaktivasi", en: "Raise reactivation" },
+  "console.vendorProfile.reactivateSubmitted": {
+    id: "Reaktivasi diajukan untuk persetujuan.",
+    en: "Reactivation submitted for approval.",
+  },
+  "console.vendorProfile.reactivateError": {
+    id: "Gagal mengajukan reaktivasi.",
+    en: "Failed to raise the reactivation.",
+  },
+  "console.vendorProfile.inactiveBanner": {
+    id: "Vendor nonaktif",
+    en: "Vendor is inactive",
+  },
+  "console.vendorProfile.inactiveBannerBody": {
+    id: "Vendor ini tidak beroperasi. Ajukan reaktivasi untuk mengembalikannya, dengan persetujuan Manajer AP.",
+    en: "This vendor is not in service. Raise a reactivation to bring it back, subject to AP Manager approval.",
+  },
+  "console.vendorProfile.reactivationPending": {
+    id: "Reaktivasi sedang ditinjau",
+    en: "A reactivation is under review",
+  },
+  "console.vendorProfile.reactivationPendingBody": {
+    id: "Vendor tetap nonaktif hingga Manajer AP memutuskan.",
+    en: "The vendor stays inactive until the AP Manager decides.",
   },
   "console.vendorProfile.changeBankAdd": { id: "Tambah rekening", en: "Add account" },
   "console.vendorProfile.changeBankEdit": { id: "Ubah", en: "Edit" },

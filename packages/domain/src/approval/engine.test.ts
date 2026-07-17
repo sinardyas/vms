@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { applyDecision, isEditTrigger, planSteps } from "./engine";
+import { applyDecision, isEditTrigger, isReactivationTrigger, planSteps } from "./engine";
 
 describe("applyDecision — registration triggers", () => {
   test("approve a non-final step advances, no subject effect", () => {
@@ -83,6 +83,40 @@ describe("applyDecision — edit triggers (M4.5)", () => {
       advanceToStepNo: null,
       resolved: true,
     });
+  });
+});
+
+describe("applyDecision — reactivation (M6.4)", () => {
+  test("reject leaves the subject Inactive rather than returning it to Draft", () => {
+    expect(applyDecision(1, 1, "reject", "reactivation")).toEqual({
+      requestStatus: "rejected",
+      subjectEffect: "keep_inactive",
+      advanceToStepNo: null,
+      resolved: true,
+    });
+  });
+
+  test("a rejected registration still returns to Draft — reactivation is the only exception", () => {
+    for (const trigger of ["new_vendor_registration", "office_vendor_registration"] as const) {
+      expect(applyDecision(1, 1, "reject", trigger).subjectEffect).toBe("return_to_draft");
+    }
+  });
+
+  test("the AP-Manager route is single-step, so step 1 is final — approve activates immediately", () => {
+    const outcome = applyDecision(1, 1, "approve", "reactivation");
+    expect(outcome.subjectEffect).toBe("activate");
+    expect(outcome.resolved).toBe(true);
+    expect(outcome.advanceToStepNo).toBeNull();
+  });
+});
+
+describe("isReactivationTrigger", () => {
+  test("only `reactivation` is a reactivation", () => {
+    expect(isReactivationTrigger("reactivation")).toBe(true);
+    expect(isReactivationTrigger("new_vendor_registration")).toBe(false);
+    expect(isReactivationTrigger("office_vendor_registration")).toBe(false);
+    expect(isReactivationTrigger("bank_change")).toBe(false);
+    expect(isReactivationTrigger("non_bank_change")).toBe(false);
   });
 });
 
