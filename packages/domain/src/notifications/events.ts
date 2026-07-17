@@ -13,7 +13,14 @@ import { z } from "zod";
 export const NOTIFICATION_EVENTS = [
   /** Signup email-verification link. Already delivered by better-auth (M1.1); M6.2 re-points it here. */
   "email_verify",
-  /** An approval decision on a vendor's registration — approved/activated, or rejected with reasons. */
+  /**
+   * An approval decision on a vendor's own standing — approved/activated, or rejected with reasons.
+   *
+   * ADR-0012's "approval decision → vendor". Covers a **registration** and a **reactivation** (M6.4):
+   * both are the vendor's lifecycle moving, and the templates carry the two registers (M6.5e). A
+   * post-activation **edit** (M4.5) is not here — the diff is decided on a record that stays Active,
+   * so the vendor's own standing never moved.
+   */
   "decision",
   /** A compliance document was rejected by a verifier; a mandatory one bounces the vendor to Draft (M5.3). */
   "doc_rejected",
