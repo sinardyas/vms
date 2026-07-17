@@ -9,7 +9,8 @@
  * roles; a request walks them one step at a time. **Approve** advances to the next step, or — on the
  * final step — resolves the request `approved` and applies the subject effect (a registration's vendor
  * becomes `active`, subject to the M5 activation gate). **Reject** at any step resolves the request
- * `rejected` and returns the subject to `Draft` with reasons (ADR-0005/0014), resumable.
+ * `rejected` and returns the subject to where it came from with reasons (ADR-0005/0014) — `Draft` for a
+ * registration, still `Inactive` for a reactivation.
  *
  * Side-effect-free and DB-free — no Drizzle, no Hono. The API store (`apps/api/approval-route.ts`)
  * loads the request + its steps, calls {@link applyDecision}, and writes the outcome in one transaction;
@@ -23,28 +24,45 @@ import type { ApprovalTrigger } from "../values/enums";
 export type ApprovalDecision = "approve" | "reject";
 
 /**
- * The two families of trigger the engine drives, which decide what a final approve / a reject *means*:
- *   - **Registration** (`new_vendor_registration`, `office_vendor_registration`, `reactivation`) — the
- *     subject is a Draft/Inactive vendor becoming Active; final approve **activates** it, reject returns
- *     it to Draft (ADR-0005).
+ * The three families of trigger the engine drives, which decide what a final approve / a reject *means*:
+ *   - **Registration** (`new_vendor_registration`, `office_vendor_registration`) — the subject is a Draft
+ *     vendor becoming Active; final approve **activates** it, reject returns it to Draft (ADR-0005).
+ *   - **Reactivation** (`reactivation`, M6.4) — registration-like on approve (the subject lands Active,
+ *     gate and all), but *not* on reject: see {@link isReactivationTrigger}.
  *   - **Edit** (`bank_change`, `non_bank_change`) — the subject is an *already-Active* vendor whose live
  *     record is untouched while a proposed **diff** rides on the request (ADR-0005/0010, M4.5); final
  *     approve **applies** the diff, reject **discards** it — either way the vendor stays Active.
  *
- * An edit trigger is exactly a post-activation change (bank or non-bank); everything else is registration
- * (or reactivation, which is registration-like — it lands the subject Active).
+ * An edit trigger is exactly a post-activation change (bank or non-bank); everything else lands the
+ * subject Active on final approve.
  */
 export const isEditTrigger = (trigger: ApprovalTrigger): boolean =>
   trigger === "bank_change" || trigger === "non_bank_change";
+
+/**
+ * Is this the Inactive→Active reactivation trigger (M6.4, ADR-0009)?
+ *
+ * It shares the registration family's *approve* path — final approve activates the subject, gated by M5.2
+ * exactly as a first activation is, because a vendor that went dormant may hold lapsed documents. It
+ * parts company on *reject*: a registration falls back to `Draft`, but a reactivation's subject was
+ * **Inactive**, and Draft means "an unsubmitted registration". Sending a refused, established vendor
+ * there would recast a dormant record as an unfinished one and push it back through
+ * `new_vendor_registration`. A declined reactivation simply leaves the vendor Inactive
+ * ({@link SubjectEffect} `keep_inactive`) — free to be raised again.
+ */
+export const isReactivationTrigger = (trigger: ApprovalTrigger): boolean =>
+  trigger === "reactivation";
 
 /** The effect a decision lands on the request's subject (e.g. the vendor under registration). */
 export type SubjectEffect =
   /** No subject change — the request advanced to a further step. */
   | "none"
-  /** Registration final approval — activate the subject (vendor → `active`, subject to M5). */
+  /** Registration/reactivation final approval — activate the subject (vendor → `active`, subject to M5). */
   | "activate"
   /** Registration rejection — return the subject to `Draft` with reasons (resumable). */
   | "return_to_draft"
+  /** Reactivation rejection (M6.4) — the subject stays `Inactive`; nothing to write, reasons recorded. */
+  | "keep_inactive"
   /** Edit final approval (M4.5) — apply the request's diff to the (still-Active) subject, clear the flag. */
   | "apply_change"
   /** Edit rejection (M4.5) — discard the request's diff; the subject is unchanged, clear the flag. */
@@ -70,13 +88,15 @@ export type DecisionOutcome = {
 
 /**
  * Compute the outcome of `decision` taken on step `currentStepNo` of a `totalSteps`-step route for a
- * request of the given `trigger`. The trigger decides what resolution *means* ({@link isEditTrigger}):
+ * request of the given `trigger`. The trigger decides what resolution *means* ({@link isEditTrigger},
+ * {@link isReactivationTrigger}):
  *
  * - **Reject** (any step) → request `rejected`, resolved. Registration → subject returns to Draft;
- *   edit → the diff is discarded (`discard_change`), the Active subject unchanged.
+ *   reactivation → subject stays Inactive (`keep_inactive`); edit → the diff is discarded
+ *   (`discard_change`), the Active subject unchanged.
  * - **Approve** a non-final step → request stays `pending`, advance to the next step (no subject effect).
- * - **Approve** the final step → request `approved`, resolved. Registration → subject `activate`;
- *   edit → the diff is applied to the still-Active subject (`apply_change`).
+ * - **Approve** the final step → request `approved`, resolved. Registration *and* reactivation → subject
+ *   `activate`; edit → the diff is applied to the still-Active subject (`apply_change`).
  *
  * `currentStepNo` is 1-based and assumed in `[1, totalSteps]` (the caller only decides an open step of
  * a pending request). `totalSteps` is the route's resolved step count (≥ 1).
@@ -91,7 +111,11 @@ export const applyDecision = (
   if (decision === "reject") {
     return {
       requestStatus: "rejected",
-      subjectEffect: edit ? "discard_change" : "return_to_draft",
+      subjectEffect: edit
+        ? "discard_change"
+        : isReactivationTrigger(trigger)
+          ? "keep_inactive"
+          : "return_to_draft",
       advanceToStepNo: null,
       resolved: true,
     };

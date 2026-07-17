@@ -97,6 +97,10 @@ export type VendorDTO = {
   paymentTerm: string | null;
   signedTermsFileId: string | null;
   changePending: boolean;
+  /** Why the vendor is out of service (M6.4); null whenever it is in service. */
+  inactiveReason: string | null;
+  /** A reactivation is already awaiting the AP Manager — distinct from `changePending` (M4.5's edit lock). */
+  reactivationPending: boolean;
 };
 
 /** The Draft payload a screen saves — the lenient shape (only origin/name are truly required). */
@@ -164,6 +168,28 @@ export const vendorApi = {
     request<{ items: RequiredDocumentDTO[] }>(`/vendors/${id}/required-documents`, locale).then(
       (r) => r.items,
     ),
+
+  /**
+   * Take an Active vendor out of service (M6.4, #80) — direct, no approval, `vendors:delete` (sysadmin
+   * only among the seeded roles). The reason is mandatory and lands on the vendor record. Refusals (409
+   * not-Active / in-flight request, 422 missing reason) come back localized as a {@link VendorApiError}.
+   */
+  deactivate: (locale: string, id: string, reason: string): Promise<void> =>
+    request<{ ok: true }>(`/vendors/${id}/deactivate`, locale, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }).then(() => undefined),
+
+  /**
+   * Raise an Inactive vendor's return to service (M6.4, #80) — opens the ADR-0009 `reactivation` request
+   * for the AP Manager. The vendor stays Inactive until that approval lands (and the M5.2 document gate
+   * clears); a second raise trips the one-pending lock as a localized 409.
+   */
+  reactivate: (locale: string, id: string): Promise<string> =>
+    request<{ requestId: string }>(`/vendors/${id}/reactivate`, locale, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }).then((r) => r.requestId),
 };
 
 /* ── Bank block (M3.2) ────────────────────────────────────────────────────────────────────────── */

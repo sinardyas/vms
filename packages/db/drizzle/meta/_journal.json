@@ -43,6 +43,13 @@
       "when": 1784218813034,
       "tag": "0005_notification_store",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784254814723,
+      "tag": "0006_vendor_inactive_reason",
+      "breakpoints": true
     }
   ]
 }
