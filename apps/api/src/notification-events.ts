@@ -86,23 +86,27 @@ export const labelFor = (
 
 // --- The events -----------------------------------------------------------------------------------
 
-/** An approval decision on a vendor's registration, as the vendor needs to hear it. */
+/** An approval decision on a vendor's own standing, as the vendor needs to hear it. */
 export type DecisionNotice = {
   readonly vendorId: string;
   readonly vendorName: string;
   readonly outcome: "approved" | "rejected";
+  /** Registration, or a reactivation of a dormant vendor (M6.4) — selects the register (M6.5e). */
+  readonly kind: "registration" | "reactivation";
   /** The decider's reason. Required by the template on a rejection (ADR-0012 reject-with-reasons). */
   readonly reason: string | null;
   readonly url: string;
 };
 
 /**
- * Tell a vendor's owner that their registration was approved or rejected.
+ * Tell a vendor's owner that their registration or reactivation was approved or rejected.
  *
- * Only registration triggers reach here — a post-activation **edit** (M4.5) is decided by staff on
- * the vendor's behalf and doesn't change the vendor's own lifecycle state, so the catalogue scopes
- * `decision` to registrations ("an approval decision on a vendor's *registration*", `events.ts`) and
- * the caller filters on the trigger rather than this function second-guessing it.
+ * Only the triggers that move the vendor's **own** lifecycle reach here — a post-activation **edit**
+ * (M4.5) is decided by staff on the vendor's behalf and leaves the record Active throughout, so the
+ * caller filters on the trigger rather than this function second-guessing it. A **reactivation** does
+ * move it, and passes `kind` to say so: M6.4 suppressed this notice entirely rather than send
+ * registration copy to a dormant vendor, which left a vendor told *nothing* when their reactivation
+ * resolved — including when it put them back in service (M6.5e).
  */
 export const notifyDecision = async (reader: Reader, notice: DecisionNotice): Promise<void> => {
   const recipient = await vendorOwnerRecipient(reader, notice.vendorId);
@@ -116,6 +120,7 @@ export const notifyDecision = async (reader: Reader, notice: DecisionNotice): Pr
       url: notice.url,
       vendorName: notice.vendorName,
       outcome: notice.outcome,
+      kind: notice.kind,
       // The schema requires a reason on a rejection and forbids nothing on an approval; passing
       // `undefined` rather than `null` lets the optional field simply be absent.
       reason: notice.reason ?? undefined,
