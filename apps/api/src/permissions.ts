@@ -17,9 +17,10 @@ import {
   RBAC_VERBS,
   type RbacModule,
   type RbacVerb,
+  type SessionRole,
   toPermissionSet,
 } from "@vms/domain";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 /** Maps a `role_permissions` row's boolean columns to the verb each one grants. */
 const VERB_COLUMN: Record<RbacVerb, "canAdd" | "canEdit" | "canDelete" | "canView" | "canApprove"> =
@@ -71,3 +72,20 @@ export const loadPermissions = async (db: DB, userId: string): Promise<Permissio
 
   return expandGrants(rows);
 };
+
+/**
+ * Load the roles `userId` holds, for **display** (M6.5, #90) — the console header names the signed-in
+ * staff member and the role they are acting as, which is what makes switching between the seeded UAT
+ * accounts legible.
+ *
+ * Same `active` filter as {@link loadPermissions}, so the header can't name a role that grants nothing.
+ * Ordered by `code` to keep a multi-role header stable across requests. This is *not* an authorization
+ * read — `can()` and the guard go on the permission set; nothing branches on the strings returned here.
+ */
+export const loadSessionRoles = async (db: DB, userId: string): Promise<SessionRole[]> =>
+  db
+    .select({ code: roles.code, nameId: roles.nameId, nameEn: roles.nameEn })
+    .from(userRoles)
+    .innerJoin(roles, eq(roles.id, userRoles.roleId))
+    .where(and(eq(userRoles.userId, userId), eq(roles.active, true)))
+    .orderBy(asc(roles.code));

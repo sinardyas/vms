@@ -1,6 +1,6 @@
 import type { Locale } from "@vms/domain";
 import { cn } from "../lib/cn";
-import { SUPPORTED_LOCALES, useLocale } from "./provider";
+import { SUPPORTED_LOCALES, useLocale, useT } from "./provider";
 
 /**
  * LocaleSwitch — an ID / EN segmented toggle wired to the LocaleProvider. Bahasa Indonesia is the
@@ -10,11 +10,12 @@ const LABELS: Record<Locale, string> = { id: "ID", en: "EN" };
 
 export function LocaleSwitch({ className }: { className?: string }) {
   const { locale, setLocale } = useLocale();
+  const t = useT();
   return (
     // biome-ignore lint/a11y/useSemanticElements: role="group" is the correct ARIA for a segmented toggle; there is no native element for it.
     <div
       role="group"
-      aria-label="Language"
+      aria-label={t("shell.aria.language")}
       className={cn("inline-flex items-center gap-0.5 rounded-lg bg-secondary p-0.5", className)}
     >
       {SUPPORTED_LOCALES.map((code) => {
