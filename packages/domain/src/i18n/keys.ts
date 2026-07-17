@@ -976,6 +976,43 @@ export const catalogue = {
   "console.nav.audit": { id: "Log Audit", en: "Audit Log" },
   "console.nav.components": { id: "Sistem Desain", en: "Design System" },
   "console.nav.reports": { id: "Laporan", en: "Reports" },
+  // --- Console sign-in (M6.5g, #97) — the staff auth surface the console never had ---
+  // Mirrors the prototype's `staff_console.html` login card. No sign-up keys: staff accounts are
+  // provisioned (seeded / admin-invited), never self-registered.
+  "console.auth.eyebrow": { id: "Masuk Internal", en: "Internal sign in" },
+  "console.auth.title": { id: "Selamat datang kembali", en: "Welcome back" },
+  "console.auth.subtitle": {
+    id: "Masuk dengan akun staf Soechi Anda.",
+    en: "Sign in with your Soechi staff account.",
+  },
+  "console.auth.email": { id: "Email", en: "Email" },
+  "console.auth.password": { id: "Kata sandi", en: "Password" },
+  "console.auth.signIn": { id: "Masuk", en: "Sign in" },
+  "console.auth.signOut": { id: "Keluar", en: "Sign out" },
+  "console.auth.loading": { id: "Memuat…", en: "Loading…" },
+  // Wrong password, unknown email, or an unverified address — better-auth answers all three the same
+  // way on purpose (naming which one is wrong tells an attacker whether the account exists).
+  "console.auth.signInError": {
+    id: "Email atau kata sandi salah.",
+    en: "Incorrect email or password.",
+  },
+  // The credential was right but the account is deactivated (`users.active = false`): better-auth
+  // mints a session, then our own resolver refuses it. Without this the console would bounce silently
+  // back to the sign-in card as though nothing had happened.
+  "console.auth.inactiveError": {
+    id: "Akun Anda tidak aktif. Hubungi administrator sistem.",
+    en: "Your account is inactive. Contact a system administrator.",
+  },
+  // A vendor's credential, used on the staff console. Their session is real — it just belongs to the
+  // vendor portal, so say that rather than admitting them to an empty console.
+  "console.auth.notStaffError": {
+    id: "Akun ini adalah akun vendor. Gunakan Portal Vendor untuk masuk.",
+    en: "This is a vendor account. Please use the Vendor Portal to sign in.",
+  },
+  "console.auth.footnote": {
+    id: "Akses berbasis peran. Antrean dan izin Anda ditentukan oleh peran yang diberikan kepada Anda.",
+    en: "Access is role-based. Your queues and permissions are determined by your assigned role.",
+  },
   // An in-scope Phase-0 screen that hasn't landed yet — distinct from the out-of-Phase-0 `soon` shell.
   "console.placeholder.body": {
     id: "Kerangka Fase-0. Layar ini hadir pada milestone berikutnya.",
