@@ -54,6 +54,7 @@ const decisionFor = (to: string): NotifyRequest<"decision"> => ({
     url: "https://portal.test/registration",
     vendorName: "PT Samudra",
     outcome: "rejected",
+    kind: "registration",
     reason: "NPWP tidak sesuai",
   },
 });
@@ -141,7 +142,13 @@ describe("notify — validation", () => {
         to: vendor.userId,
         event: "decision",
         // A rejection with no reason — sending it would ship a literal `{reason}` to the vendor.
-        params: { url: "https://portal.test/x", vendorName: "PT Samudra", outcome: "rejected" },
+        // Complete but for the reason, so this still fails for exactly the one thing it names.
+        params: {
+          url: "https://portal.test/x",
+          vendorName: "PT Samudra",
+          outcome: "rejected",
+          kind: "registration",
+        },
       },
       deps,
     );
