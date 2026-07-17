@@ -1,13 +1,20 @@
 import type { Icon } from "@phosphor-icons/react";
 import { List, X } from "@phosphor-icons/react";
 import { useState } from "react";
+import { useT } from "../i18n/provider";
 import { cn } from "../lib/cn";
 
 /**
  * AppShell — the nav frame both apps live in (M0.5). One component, two skins: the vendor Portal
  * uses the light sidebar, the staff Console the dark navy (#001a36) sidebar from the prototype.
  * Nav is grouped and RBAC-ready — screens pass only the items the signed-in role may see (M1 wires
- * `can()` into this). Bilingual labels flow in already-translated, so the shell stays i18n-agnostic.
+ * `can()` into this).
+ *
+ * i18n split (clarified in M6.5, #90): **caller-supplied** labels — nav items, group eyebrows, the
+ * page title — flow in already-translated, because only the app knows which key names its own
+ * sections. The shell's **own** chrome (the menu toggles' `aria-label`s) is the shell's copy, so it
+ * resolves those itself via `useT()` — as {@link LocaleSwitch}, in this same package, already does.
+ * Without this the locale switch left the frame in English while everything inside it translated.
  */
 export interface NavItem {
   key: string;
@@ -35,7 +42,8 @@ export interface AppShellProps {
   groups: NavGroup[];
   activeKey: string;
   onNavigate: (key: string) => void;
-  user: AppUser;
+  /** Who is signed in. Omit when there is nobody to name — the block is left out rather than faked. */
+  user?: AppUser;
   /** Sidebar skin: dark navy (console) or light (portal). */
   variant?: "dark" | "light";
   /** Header content on the right (locale switch, notifications…). */
@@ -66,6 +74,7 @@ export function AppShell({
 }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const dark = variant === "dark";
+  const t = useT();
 
   const sidebar = (
     <div
@@ -167,40 +176,43 @@ export function AppShell({
         ))}
       </nav>
 
-      {/* User */}
-      <div
-        className={cn(
-          "flex items-center gap-3 p-4",
-          dark ? "border-t border-white/10" : "border-t border-border",
-        )}
-      >
+      {/* User — omitted entirely while the caller has no identity to show (the `/me` mirror is still
+          loading, or nobody is signed in). Rendering nothing beats rendering a placeholder person. */}
+      {user && (
         <div
           className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold",
-            dark ? "bg-white/10 text-white" : "bg-primary/10 text-primary",
+            "flex items-center gap-3 p-4",
+            dark ? "border-t border-white/10" : "border-t border-border",
           )}
         >
-          {initials(user.name)}
-        </div>
-        <div className="min-w-0 flex-1 leading-tight">
           <div
             className={cn(
-              "truncate text-sm font-semibold",
-              dark ? "text-white" : "text-foreground",
+              "flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold",
+              dark ? "bg-white/10 text-white" : "bg-primary/10 text-primary",
             )}
           >
-            {user.name}
+            {initials(user.name)}
           </div>
-          <div
-            className={cn(
-              "truncate text-xs",
-              dark ? "text-sidebar-muted" : "text-muted-foreground",
-            )}
-          >
-            {user.role}
+          <div className="min-w-0 flex-1 leading-tight">
+            <div
+              className={cn(
+                "truncate text-sm font-semibold",
+                dark ? "text-white" : "text-foreground",
+              )}
+            >
+              {user.name}
+            </div>
+            <div
+              className={cn(
+                "truncate text-xs",
+                dark ? "text-sidebar-muted" : "text-muted-foreground",
+              )}
+            >
+              {user.role}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 
@@ -214,7 +226,7 @@ export function AppShell({
         <div className="fixed inset-0 z-40 md:hidden">
           <button
             type="button"
-            aria-label="Close menu"
+            aria-label={t("shell.aria.closeMenu")}
             className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             onClick={() => setMobileOpen(false)}
           />
@@ -228,7 +240,9 @@ export function AppShell({
           <button
             type="button"
             className="text-muted-foreground md:hidden"
-            aria-label="Open menu"
+            // Tracks the icon: this button renders an X once the drawer is open, so the label must
+            // say "close" then too, or a screen reader is told the opposite of what's shown.
+            aria-label={mobileOpen ? t("shell.aria.closeMenu") : t("shell.aria.openMenu")}
             onClick={() => setMobileOpen(true)}
           >
             {mobileOpen ? <X size={22} /> : <List size={22} />}

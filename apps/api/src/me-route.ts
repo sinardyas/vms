@@ -14,31 +14,41 @@
  * enforcement seam observable from the client, so every screen built later gates on the live grid.
  */
 
-import { type Actor, capabilities, unauthorizedError } from "@vms/domain";
+import {
+  type SessionIdentity,
+  type SessionRole,
+  capabilities,
+  unauthorizedError,
+} from "@vms/domain";
 import { Hono } from "hono";
 import type { AppEnv } from "./context";
 import { sendError } from "./http-error";
 
-/** The identity fields the client needs — never the raw permission set (it reads flags instead). */
-export type MeIdentity = Pick<Actor, "userId" | "kind" | "email" | "name">;
+/** Resolves the display roles a user holds. Injected so the route is testable without a database. */
+export type RoleLoader = (userId: string) => Promise<readonly SessionRole[]>;
 
 /**
  * Build the `/me` router. Mount under a parent running the request-context middleware, so `c.var.ctx`
  * is populated before the handler reads the actor. Factory (not an inline handler) so a test can mount
  * it with an injected actor resolver, exactly like the walking-skeleton route.
+ *
+ * `loadRoles` is a second read rather than a field on {@link Actor}: roles are needed only to *show*
+ * who is signed in (M6.5, #90), so every other request — which authorizes off the permission set —
+ * shouldn't pay for the join.
  */
-export const meRoutes = () => {
+export const meRoutes = (loadRoles: RoleLoader) => {
   const app = new Hono<AppEnv>();
 
-  app.get("/me", (c) => {
+  app.get("/me", async (c) => {
     const { actor } = c.var.ctx;
     if (actor === null) return sendError(c, unauthorizedError());
 
-    const identity: MeIdentity = {
+    const identity: SessionIdentity = {
       userId: actor.userId,
       kind: actor.kind,
       email: actor.email,
       name: actor.name,
+      roles: await loadRoles(actor.userId),
     };
     return c.json({ actor: identity, capabilities: capabilities(actor.permissions) });
   });
