@@ -42,6 +42,7 @@ We keep an ADR log under `docs/adr/`. Each significant decision gets its own num
 | 0014 | Workflow sequencing — verification, freezing, escalation | Accepted |
 | 0015 | Implementation defaults | Accepted |
 | 0016 | Vendor in-app notifications; status view reads real state | Accepted |
+| 0017 | Hide out-of-phase sections; minimal Phase-0 dashboard (reverses #9/#90) | Accepted |
 
 See also: `../phase-0-domain-model.md` (the model), `../phase-0-build-plan.md` (the execution sequence),
 `../glossary.md` (ubiquitous language).
