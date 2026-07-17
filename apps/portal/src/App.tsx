@@ -45,17 +45,19 @@ import { signOut } from "./lib/auth";
 import { notificationApi } from "./lib/notifications";
 import { type VendorDTO, vendorApi } from "./lib/vendor";
 
-/** A small landing card: the vendor's current registration status + a jump into the wizard. */
-function Dashboard({ onGoRegister }: { onGoRegister: () => void }) {
-  const { locale } = useLocale();
+/**
+ * A small landing card: the vendor's current registration status + a jump into the wizard. The vendor
+ * record is passed in rather than fetched here — the shell already loads it to name the company in the
+ * header, and one fetch shared beats two racing.
+ */
+function Dashboard({
+  vendor,
+  onGoRegister,
+}: {
+  vendor: VendorDTO | null;
+  onGoRegister: () => void;
+}) {
   const t = useT();
-  const [vendor, setVendor] = useState<VendorDTO | null>(null);
-  useEffect(() => {
-    vendorApi
-      .getMe(locale)
-      .then(setVendor)
-      .catch(() => setVendor(null));
-  }, [locale]);
 
   return (
     <Card className="max-w-2xl">
@@ -104,8 +106,18 @@ const sectionFor = (link: string): string => {
 /** The authenticated portal — nav + section switch. */
 function Portal() {
   const t = useT();
-  const { reload } = useCapabilities();
+  const { locale } = useLocale();
+  const { reload, actor } = useCapabilities();
   const [active, setActive] = useState("dashboard");
+  // The signed-in vendor's own record — the header names their company beneath their name, and the
+  // Dashboard reads the same fetch rather than issuing a second one.
+  const [vendor, setVendor] = useState<VendorDTO | null>(null);
+  useEffect(() => {
+    vendorApi
+      .getMe(locale)
+      .then(setVendor)
+      .catch(() => setVendor(null));
+  }, [locale]);
 
   const nav: NavGroup[] = [
     {
@@ -119,31 +131,23 @@ function Portal() {
     {
       label: t("soon.badge"),
       items: [
-        { key: "invoices", label: "Invoices", icon: Invoice, soon: true },
-        { key: "orders", label: "Purchase Orders", icon: Package, soon: true },
-        { key: "messages", label: "Communications", icon: ChatCircleDots, soon: true },
+        { key: "invoices", label: t("portal.nav.invoices"), icon: Invoice, soon: true },
+        { key: "orders", label: t("portal.nav.orders"), icon: Package, soon: true },
+        { key: "messages", label: t("portal.nav.messages"), icon: ChatCircleDots, soon: true },
       ],
     },
   ];
 
-  const soon = new Set(
-    nav
-      .flatMap((g) => g.items)
-      .filter((i) => i.soon)
-      .map((i) => i.key),
-  );
+  const items = nav.flatMap((g) => g.items);
+  const soon = new Set(items.filter((i) => i.soon).map((i) => i.key));
 
   const doSignOut = async () => {
     await signOut();
     reload();
   };
 
-  const titleKey =
-    active === "registration"
-      ? "portal.nav.registration"
-      : active === "documents"
-        ? "portal.nav.documents"
-        : "portal.nav.dashboard";
+  // The page title is the active section's nav label — one string for both, so they can't disagree.
+  const title = items.find((i) => i.key === active)?.label ?? t("portal.nav.dashboard");
 
   return (
     <AppShell
@@ -152,8 +156,12 @@ function Portal() {
       groups={nav}
       activeKey={active}
       onNavigate={setActive}
-      user={{ name: APP_NAME, role: t("portal.shell.subtitle") }}
-      title={t(titleKey)}
+      // The signed-in person and the company they act for (M6.5, #90) — this used to render the app's
+      // own name where a user belongs. Falls back to the portal's name until the vendor record loads.
+      user={
+        actor ? { name: actor.name, role: vendor?.name ?? t("portal.shell.subtitle") } : undefined
+      }
+      title={title}
       headerRight={
         <div className="flex items-center gap-2">
           {/* The vendor's notification centre (M6.3). Its links point at portal sections, so a click
@@ -169,16 +177,15 @@ function Portal() {
         </div>
       }
     >
-      {active === "dashboard" ? (
-        <Dashboard onGoRegister={() => setActive("registration")} />
-      ) : active === "registration" ? (
+      {active === "registration" ? (
         <Registration />
       ) : active === "documents" ? (
         <Registration documentsOnly />
       ) : soon.has(active) ? (
-        <ComingSoon title={active} />
+        // The section's nav label, not its key — this rendered the raw key ("invoices") before #90.
+        <ComingSoon title={title} />
       ) : (
-        <Dashboard onGoRegister={() => setActive("registration")} />
+        <Dashboard vendor={vendor} onGoRegister={() => setActive("registration")} />
       )}
     </AppShell>
   );

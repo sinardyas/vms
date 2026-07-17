@@ -104,6 +104,7 @@ export {
   useCapabilities,
   useCan,
   type CapabilitiesLoader,
+  type CapabilitiesSnapshot,
   type CapabilitiesStatus,
 } from "./access/capabilities";
 
