@@ -54,7 +54,7 @@ import {
 import { type AuditEntry, writeAudit } from "./audit";
 import { auth } from "./auth";
 import type { AppEnv } from "./context";
-import { env } from "./env";
+import { CONSOLE_RESET_REDIRECT } from "./credential-links";
 import { sendError } from "./http-error";
 import { requirePermission } from "./rbac";
 
@@ -431,7 +431,7 @@ export const drizzleAccessStore = (db: DB = defaultDb): AccessStore => {
 /** Send the "set your password" email (better-auth provisions the credential on first set). */
 const requestPasswordSet = (email: string): Promise<unknown> =>
   auth.api.requestPasswordReset({
-    body: { email, redirectTo: `${env.consoleUrl}/reset-password` },
+    body: { email, redirectTo: CONSOLE_RESET_REDIRECT },
   });
 
 /** Read + validate a JSON body against `schema`, as a domain `Result` (never throws). */
