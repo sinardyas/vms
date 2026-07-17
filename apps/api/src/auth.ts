@@ -32,6 +32,12 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { and, eq } from "drizzle-orm";
 import { type AuditAttribution, type AuditEntry, writeAuditRow } from "./audit";
+import {
+  VERIFY_REDIRECT,
+  isOfficeInviteLink,
+  officeInviteRedirect,
+  withCallbackURL,
+} from "./credential-links";
 import { sendPasswordResetEmail } from "./email";
 import { env } from "./env";
 import { notify } from "./notifications";
@@ -96,16 +102,28 @@ const stampLocale = async (userId: string, locale: Locale): Promise<void> => {
 };
 
 /**
- * Where an office invite's password-set link lands (M6.2). Doubles as the **signal** that a reset
- * token was minted for an invite rather than for someone who forgot their password: we choose this
- * `redirectTo` when asking better-auth for the token, and read it back off the `url` in
- * `sendResetPassword`. Carrying the intent on the link itself keeps the branch stateless — no map of
- * in-flight invites to leak or race.
+ * Confirm the address a credential link was mailed to (M6.5d, #92).
+ *
+ * Following a link sent to an inbox proves control of that inbox — it is the same evidence the
+ * verification link collects, arriving by the same post. So consuming a reset token verifies the
+ * address, and an office owner (provisioned `emailVerified: false` precisely so the invite could be
+ * the proof — see `office-account.ts`) becomes verified by acting on their invitation.
+ *
+ * Without this the invitation is a trap: the owner sets a password and then cannot sign in, because
+ * `requireEmailVerification` refuses an unverified address and *no* second mail is ever sent to fix
+ * it. The account would be permanently unreachable through the only door it has.
+ *
+ * Idempotent and harmless for the already-verified (a staff reset, a vendor who forgot their
+ * password) — they are simply re-asserted as verified. Best-effort: the password has already been
+ * changed by the time this runs, so a failure here must not fail the reset it follows.
  */
-export const OFFICE_INVITE_REDIRECT = `${env.portalUrl}/set-password?invite=1`;
-
-/** Was this reset link minted for an office invite (rather than a plain forgot-password)? */
-const isOfficeInviteLink = (url: string): boolean => url.includes(encodeURIComponent("invite=1"));
+const confirmEmailOnReset = async (userId: string): Promise<void> => {
+  try {
+    await db.update(users).set({ emailVerified: true }).where(eq(users.id, userId));
+  } catch (error) {
+    console.error("[auth] failed to confirm email on password reset", userId, error);
+  }
+};
 
 /** The vendor a newly provisioned office owner belongs to — `null` if they own none. */
 const officeInviteFor = async (userId: string): Promise<{ vendorName: string } | null> => {
@@ -122,13 +140,13 @@ const officeInviteFor = async (userId: string): Promise<{ vendorName: string } |
  * Send an office-registered vendor's owner their invitation: a link that sets their first password
  * (M6.2, ADR-0004). better-auth has no "mint a token without mailing it" API — `requestPasswordReset`
  * always routes through `sendResetPassword` — so the invite is delivered *from* that callback, which
- * recognises the link by {@link OFFICE_INVITE_REDIRECT}. Best-effort, like every notification: the
+ * recognises the link by {@link officeInviteRedirect}. Best-effort, like every notification: the
  * activation it follows has already committed.
  */
 export const sendOfficeInvite = async (email: string): Promise<void> => {
   try {
     await auth.api.requestPasswordReset({
-      body: { email, redirectTo: OFFICE_INVITE_REDIRECT },
+      body: { email, redirectTo: officeInviteRedirect(email) },
     });
   } catch (error) {
     console.error("[auth] failed to send office invite", email, error);
@@ -223,6 +241,12 @@ export const auth = betterAuth({
         locale: localeFromRequest(request),
       });
     },
+    // Consuming a token we mailed proves control of the address it went to (M6.5d) — which is what
+    // lets an office owner sign in with the password they just set, rather than bouncing off
+    // `requireEmailVerification` on an address no further mail would ever verify.
+    onPasswordReset: async ({ user }) => {
+      await confirmEmailOnReset(user.id);
+    },
   },
 
   emailVerification: {
@@ -238,7 +262,15 @@ export const auth = betterAuth({
       // carry the language this request asked for or the verify mail regresses to Indonesian. This is
       // the sign-up request (`sendOnSignUp`), which is exactly where the preference is knowable.
       await stampLocale(user.id, localeFromRequest(request));
-      await notify({ to: user.id, event: "email_verify", params: { url } });
+      // Steer the link at the portal's landing page (M6.5d, #92). better-auth builds it to return to
+      // *its own* root — an API health blob — unless the sign-up caller passed a `callbackURL`, which
+      // is a thing a client can simply forget. Overwriting it here makes the destination the server's
+      // decision, so every verification mail lands somewhere a person can read.
+      await notify({
+        to: user.id,
+        event: "email_verify",
+        params: { url: withCallbackURL(url, VERIFY_REDIRECT) },
+      });
     },
   },
 

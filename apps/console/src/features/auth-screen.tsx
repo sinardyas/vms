@@ -30,6 +30,43 @@ const BACKDROP =
   "radial-gradient(circle at 15% 15%, rgba(0,113,227,0.30), transparent 40%), radial-gradient(circle at 85% 85%, rgba(0,113,227,0.15), transparent 40%), #001a36";
 
 /**
+ * The navy field, the brand lockup, and the card the screen fills in.
+ *
+ * Exported so the credential landing page (M6.5d, `reset-password-screen.tsx`) is the same front
+ * door: a staff member following an emailed link arrives at the console they recognise, not at a
+ * second, differently-dressed login surface.
+ */
+export function AuthFrame({ children }: { children: React.ReactNode }) {
+  const t = useT();
+  return (
+    <div
+      className="flex min-h-screen items-center justify-center p-4"
+      style={{ background: BACKDROP }}
+    >
+      <div className="absolute right-4 top-4">
+        <LocaleSwitch />
+      </div>
+      <div className="w-full max-w-md">
+        {/* Brand lockup above the card — the prototype's anchor mark + Soechi VMS / Staff Console. */}
+        <div className="mb-7 flex items-center justify-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary shadow-lg">
+            <Anchor weight="fill" className="h-6 w-6 text-primary-foreground" />
+          </div>
+          <div>
+            <div className="text-lg font-extrabold tracking-tight text-white">{APP_NAME}</div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#7fb5ee]">
+              {t("console.shell.subtitle")}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl bg-card p-9 shadow-2xl">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Decide whether a freshly-minted session may use the console, and say why not when it may not.
  * Returns `null` on success, else the message key to show. A refused session is signed out here: it
  * authenticated, so the cookie is real, and leaving it set would make the next `/me` a silent 401.
@@ -70,73 +107,50 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: () => void }) {
   };
 
   return (
-    <div
-      className="flex min-h-screen items-center justify-center p-4"
-      style={{ background: BACKDROP }}
-    >
-      <div className="absolute right-4 top-4">
-        <LocaleSwitch />
+    <AuthFrame>
+      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+        {t("console.auth.eyebrow")}
       </div>
-      <div className="w-full max-w-md">
-        {/* Brand lockup above the card — the prototype's anchor mark + Soechi VMS / Staff Console. */}
-        <div className="mb-7 flex items-center justify-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary shadow-lg">
-            <Anchor weight="fill" className="h-6 w-6 text-primary-foreground" />
-          </div>
-          <div>
-            <div className="text-lg font-extrabold tracking-tight text-white">{APP_NAME}</div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#7fb5ee]">
-              {t("console.shell.subtitle")}
-            </div>
-          </div>
-        </div>
+      <h1 className="text-2xl font-extrabold tracking-tight text-foreground">
+        {t("console.auth.title")}
+      </h1>
+      <p className="mt-1 text-sm text-muted-foreground">{t("console.auth.subtitle")}</p>
 
-        <div className="rounded-2xl bg-card p-9 shadow-2xl">
-          <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
-            {t("console.auth.eyebrow")}
-          </div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-foreground">
-            {t("console.auth.title")}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t("console.auth.subtitle")}</p>
+      <form onSubmit={submit} className="mt-6 flex flex-col gap-4">
+        <Field label={t("console.auth.email")}>
+          {(p) => (
+            <Input
+              {...p}
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          )}
+        </Field>
+        {/* The error rides the password field — the same place the portal puts it, and the field
+            a signed-out staff member will retry first. */}
+        <Field label={t("console.auth.password")} error={error ? t(error) : undefined}>
+          {(p) => (
+            <Input
+              {...p}
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          )}
+        </Field>
+        <Button type="submit" disabled={busy} className="w-full">
+          {t("console.auth.signIn")}
+        </Button>
+      </form>
 
-          <form onSubmit={submit} className="mt-6 flex flex-col gap-4">
-            <Field label={t("console.auth.email")}>
-              {(p) => (
-                <Input
-                  {...p}
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              )}
-            </Field>
-            {/* The error rides the password field — the same place the portal puts it, and the field
-                a signed-out staff member will retry first. */}
-            <Field label={t("console.auth.password")} error={error ? t(error) : undefined}>
-              {(p) => (
-                <Input
-                  {...p}
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              )}
-            </Field>
-            <Button type="submit" disabled={busy} className="w-full">
-              {t("console.auth.signIn")}
-            </Button>
-          </form>
-
-          <p className="mt-6 border-t border-border pt-4 text-center text-xs leading-relaxed text-muted-foreground">
-            {t("console.auth.footnote")}
-          </p>
-        </div>
-      </div>
-    </div>
+      <p className="mt-6 border-t border-border pt-4 text-center text-xs leading-relaxed text-muted-foreground">
+        {t("console.auth.footnote")}
+      </p>
+    </AuthFrame>
   );
 }

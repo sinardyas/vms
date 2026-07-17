@@ -52,3 +52,23 @@ export const signIn = async (email: string, password: string): Promise<AuthResul
 
 /** End the session. The caller reloads the capability mirror, which flips the app back to signed-out. */
 export const signOut = (): Promise<AuthResult> => post("/api/auth/sign-out");
+
+/**
+ * Set the account's password from an emailed token (M6.5d, #92) — an admin-initiated reset, and also
+ * the *first* password of an admin-created internal user (M1.5, #24), which stores no temporary
+ * secret and so has no other way in. The token comes off the landing page's query, put there by
+ * better-auth's redirect; the field is `newPassword`, not `password`.
+ *
+ * A non-2xx is almost always `INVALID_TOKEN` — better-auth answers invalid, expired, and
+ * already-consumed tokens identically, so the caller can't distinguish them and must not guess.
+ * This mints no session: staff sign in afterwards, which is what runs the console's `admit()` check.
+ */
+export const setPassword = async (token: string, newPassword: string): Promise<AuthResult> => {
+  const res = await fetch(apiUrl("/api/auth/reset-password"), {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token, newPassword }),
+  });
+  return { ok: res.ok, status: res.status };
+};
