@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { applyDecision, isEditTrigger, isReactivationTrigger, planSteps } from "./engine";
+import { APPROVAL_TRIGGERS } from "../values";
+import {
+  applyDecision,
+  decisionNoticeKind,
+  isEditTrigger,
+  isReactivationTrigger,
+  planSteps,
+} from "./engine";
 
 describe("applyDecision — registration triggers", () => {
   test("approve a non-final step advances, no subject effect", () => {
@@ -127,6 +134,33 @@ describe("isEditTrigger", () => {
     expect(isEditTrigger("new_vendor_registration")).toBe(false);
     expect(isEditTrigger("office_vendor_registration")).toBe(false);
     expect(isEditTrigger("reactivation")).toBe(false);
+  });
+});
+
+describe("decisionNoticeKind (M6.5e)", () => {
+  test("every trigger has an answer, and it follows the trigger families", () => {
+    // Exhaustive over the enum on purpose: this is the rule deciding whether a vendor hears anything
+    // at all, and a trigger added without an answer here would default to silence unnoticed — which
+    // is exactly the hole M6.4 left for reactivation.
+    const kinds = APPROVAL_TRIGGERS.map((t) => [t, decisionNoticeKind(t)] as const);
+    expect(Object.fromEntries(kinds)).toEqual({
+      new_vendor_registration: "registration",
+      office_vendor_registration: "registration",
+      reactivation: "reactivation",
+      bank_change: null,
+      non_bank_change: null,
+    });
+  });
+
+  test("a reactivation is not silent — the M6.4 suppression is gone (M6.5e)", () => {
+    // The ticket in one assertion: M6.4 had this returning nothing for a reactivation, so a vendor
+    // learned nothing when their return to service was decided either way.
+    expect(decisionNoticeKind("reactivation")).not.toBeNull();
+  });
+
+  test("an edit stays silent — the vendor's own standing never moved (M4.5)", () => {
+    expect(decisionNoticeKind("bank_change")).toBeNull();
+    expect(decisionNoticeKind("non_bank_change")).toBeNull();
   });
 });
 

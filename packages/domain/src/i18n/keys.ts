@@ -1565,6 +1565,46 @@ export const catalogue = {
   },
   "notify.decision.rejected.cta": { id: "Lanjutkan pendaftaran", en: "Resume registration" },
 
+  // Reactivation decision → vendor (M6.5e). The same `decision` event as above — the vendor's standing
+  // was decided — in the other register. A dormant vendor submitted no registration, so none of the
+  // copy above fits: nothing was "approved" for the first time, and a decline returns them to nothing
+  // (they were Inactive and stay Inactive — `keep_inactive`, M6.4), so it must not read as a bounce.
+  // Neither CTA offers to raise it again: reactivation is **staff-only** (M6.4 `requireInternalActor`),
+  // so the vendor is told, not asked — pointing them at a flow they can't walk is what M6.4 suppressed
+  // this notice to avoid, and would simply be the same bug in new words.
+  "notify.decision.reactivation.approved.subject": {
+    id: "Vendor Anda kembali aktif — Soechi VMS",
+    en: "Your vendor account is active again — Soechi VMS",
+  },
+  "notify.decision.reactivation.approved.title": {
+    id: "Reaktivasi disetujui",
+    en: "Reactivation approved",
+  },
+  "notify.decision.reactivation.approved.body": {
+    id: "Halo {name}, permohonan reaktivasi {vendorName} telah disetujui dan vendor Anda kembali aktif. Anda dapat masuk untuk melihat data vendor Anda.",
+    en: "Hi {name}, the reactivation request for {vendorName} has been approved and your vendor account is active again. You can sign in to view your vendor record.",
+  },
+  "notify.decision.reactivation.approved.cta": {
+    id: "Buka portal vendor",
+    en: "Open the vendor portal",
+  },
+  "notify.decision.reactivation.rejected.subject": {
+    id: "Permohonan reaktivasi vendor Anda ditolak — Soechi VMS",
+    en: "Your vendor reactivation request was declined — Soechi VMS",
+  },
+  "notify.decision.reactivation.rejected.title": {
+    id: "Reaktivasi ditolak",
+    en: "Reactivation declined",
+  },
+  "notify.decision.reactivation.rejected.body": {
+    id: "Halo {name}, permohonan reaktivasi {vendorName} ditolak dengan alasan berikut: {reason}. Vendor Anda tetap nonaktif. Silakan hubungi tim pengadaan Soechi untuk membahas langkah selanjutnya.",
+    en: "Hi {name}, the reactivation request for {vendorName} was declined for this reason: {reason}. Your vendor account remains inactive. Please contact the Soechi procurement team to discuss next steps.",
+  },
+  "notify.decision.reactivation.rejected.cta": {
+    id: "Lihat data vendor Anda",
+    en: "View your vendor record",
+  },
+
   // Document rejected → vendor. A mandatory doc bounces the registration to Draft (M5.3); an
   // optional one doesn't — the copy must not imply a move that didn't happen.
   "notify.docRejected.mandatory.subject": {

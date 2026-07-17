@@ -39,6 +39,16 @@ export const decisionParamsSchema = z
     ...baseParams,
     vendorName: z.string().min(1),
     outcome: z.enum(["approved", "rejected"]),
+    /**
+     * Which decision about the vendor's standing this was (M6.5e).
+     *
+     * ADR-0012 scopes this event as "approval decision → vendor"; the two kinds it can report differ
+     * only in register, so they branch here rather than becoming separate events (see
+     * {@link resolveTemplate}). Required, not defaulted: the one caller knows the trigger, and a
+     * default would silently send registration copy to a reactivating vendor — the exact failure
+     * M6.4 suppressed the notice to avoid.
+     */
+    kind: z.enum(["registration", "reactivation"]),
     /** Why it was rejected. Required on a rejection — ADR-0012 says "reject-with-reasons". */
     reason: z.string().min(1).optional(),
   })
@@ -101,7 +111,11 @@ export type ResolvedTemplate = {
 /**
  * The template for `input`. Two events branch on their params rather than getting separate event
  * types, because the *event* is one thing and only the wording differs:
- *   - `decision` — an approval reads nothing like a rejection, and a rejection must carry its reason.
+ *   - `decision` — 2×2. An approval reads nothing like a rejection (and a rejection must carry its
+ *     reason); and a **reactivation** (M6.4) reads nothing like a **registration**. The vendor's
+ *     standing was decided either way — ADR-0012's event is "approval decision → vendor" — but a
+ *     dormant vendor submitted no registration to approve, and a declined one was never in Draft to
+ *     be returned to. Same event, four registers.
  *   - `doc_rejected` — a mandatory rejection sends the vendor back to Draft (M5.3) and must say so;
  *     an optional one is advisory and must not imply the registration moved.
  */
@@ -115,6 +129,21 @@ export const resolveTemplate = (input: NotificationInput): ResolvedTemplate => {
         ctaKey: "auth.email.verify.cta",
       };
     case "decision":
+      if (input.params.kind === "reactivation") {
+        return input.params.outcome === "approved"
+          ? {
+              subjectKey: "notify.decision.reactivation.approved.subject",
+              titleKey: "notify.decision.reactivation.approved.title",
+              bodyKey: "notify.decision.reactivation.approved.body",
+              ctaKey: "notify.decision.reactivation.approved.cta",
+            }
+          : {
+              subjectKey: "notify.decision.reactivation.rejected.subject",
+              titleKey: "notify.decision.reactivation.rejected.title",
+              bodyKey: "notify.decision.reactivation.rejected.body",
+              ctaKey: "notify.decision.reactivation.rejected.cta",
+            };
+      }
       return input.params.outcome === "approved"
         ? {
             subjectKey: "notify.decision.approved.subject",
