@@ -53,6 +53,31 @@ export const isEditTrigger = (trigger: ApprovalTrigger): boolean =>
 export const isReactivationTrigger = (trigger: ApprovalTrigger): boolean =>
   trigger === "reactivation";
 
+/** The register a vendor's `decision` notice takes — see {@link decisionNoticeKind}. */
+export type DecisionNoticeKind = "registration" | "reactivation";
+
+/**
+ * Which register the vendor's `decision` notice takes when a request of `trigger` resolves — or
+ * `null` when the vendor is told nothing (M6.5e, ADR-0012).
+ *
+ * The rule follows the trigger families above, because they are already the answer to "did the
+ * vendor's own standing move?":
+ *   - **Edit** → `null`. Staff decide a diff on a record that stays Active either way; the vendor's
+ *     lifecycle never moved, so there is no decision *about them* to report.
+ *   - **Reactivation** → the reactivation register. The lifecycle moved, but a dormant vendor
+ *     submitted no registration: approval is a return to service, and a decline leaves them Inactive
+ *     rather than bouncing them to Draft (`keep_inactive`). M6.4 had only registration copy to hand
+ *     and so sent **nothing** — silence being the lesser of two wrongs — which left a vendor
+ *     uninformed even when the decision put them back in service. The register is the fix.
+ *   - **Registration** → the registration register.
+ *
+ * Pure and total over the trigger enum, so a sixth trigger cannot be added without answering this.
+ */
+export const decisionNoticeKind = (trigger: ApprovalTrigger): DecisionNoticeKind | null => {
+  if (isEditTrigger(trigger)) return null;
+  return isReactivationTrigger(trigger) ? "reactivation" : "registration";
+};
+
 /** The effect a decision lands on the request's subject (e.g. the vendor under registration). */
 export type SubjectEffect =
   /** No subject change — the request advanced to a further step. */
