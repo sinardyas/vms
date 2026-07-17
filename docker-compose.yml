@@ -150,7 +150,10 @@ services:
       # built against it). The staging overlay REQUIRES a real secret; the dev default is insecure.
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-insecure-secret-change-in-production}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      # Where credential emails land (M6.5d, #92) — the SPA origins the verify / invite / reset links
+      # redirect to. Both must be reachable from the *reader's* browser, not from the API container.
       APP_PORTAL_URL: ${APP_PORTAL_URL:-http://localhost:3000}
+      APP_CONSOLE_URL: ${APP_CONSOLE_URL:-http://localhost:3002}
       # MinIO (S3) — file storage (ADR-0008)
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
